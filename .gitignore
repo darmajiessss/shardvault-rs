@@ -1,0 +1,13 @@
+/target
+*.db
+*.db-wal
+*.db-shm
+*.db.corrupted.*
+/data
+/data_*
+/backups
+/shards
+/clones
+*.log
+.DS_Store
+Thumbs.db
