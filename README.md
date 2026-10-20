@@ -197,6 +197,7 @@ cargo clippy -- -D warnings
 
 For detailed step-by-step instructions on incorporating ShardVault into your projects:
 - **[How to Use ShardVault in Your Project](docs/HOW_TO_USE.md)**
+- **[Panduan Lengkap: Sharding & Replikasi Multi-Clone](docs/TUTORIAL_SHARDING_DAN_CLONE.md)**
 
 ---
 

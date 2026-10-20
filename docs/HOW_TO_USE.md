@@ -2,6 +2,8 @@
 
 This document provides a comprehensive, step-by-step tutorial on integrating **ShardVault-RS** into any new or existing Rust application (Point of Sale, Desktop ERP, IoT Edge Gateway, or Multi-Tenant SaaS).
 
+> 💡 *Untuk panduan mendalam tentang penambahan partisi sharding & multi-clone replika dalam Bahasa Indonesia, baca [Tutorial Sharding & Replikasi Multi-Clone](TUTORIAL_SHARDING_DAN_CLONE.md).*
+
 ---
 
 ## Table of Contents
