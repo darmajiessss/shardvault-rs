@@ -2,7 +2,8 @@
 
 This document provides a comprehensive, step-by-step tutorial on integrating **ShardVault-RS** into any new or existing Rust application (Point of Sale, Desktop ERP, IoT Edge Gateway, or Multi-Tenant SaaS).
 
-> 💡 *Untuk panduan mendalam tentang penambahan partisi sharding & multi-clone replika dalam Bahasa Indonesia, baca [Tutorial Sharding & Replikasi Multi-Clone](TUTORIAL_SHARDING_DAN_CLONE.md).*
+> 💡 *Untuk panduan mendalam tentang penambahan partisi sharding & multi-clone replika dalam Bahasa Indonesia, baca [Tutorial Sharding & Replikasi Multi-Clone](TUTORIAL_SHARDING_DAN_CLONE.md).*  
+> 📦 *Untuk panduan migrasi skema, ekspor/impor paket terenkripsi `.svp`, dan sinkronisasi terdistribusi CDC + HLC, baca [Tutorial Structure, Transfer, & Sync](TUTORIAL_TRANSFER_DAN_SYNC.md).*
 
 ---
 
@@ -16,7 +17,10 @@ This document provides a comprehensive, step-by-step tutorial on integrating **S
 7. [Cryptographic Security (AES-256-GCM & HMAC)](#7-cryptographic-security-aes-256-gcm--hmac)
 8. [Replication Management](#8-replication-management)
 9. [Disaster Recovery & Chaos Testing](#9-disaster-recovery--chaos-testing)
-10. [Managing with ShardVault Studio GUI](#10-managing-with-shardvault-studio-gui)
+10. [Schema Introspection & Migrations](#10-schema-introspection--migrations)
+11. [Secure Database Transfer Package (.svp)](#11-secure-database-transfer-package-svp)
+12. [Distributed Data Synchronization (CDC + HLC)](#12-distributed-data-synchronization-cdc--hlc)
+13. [Managing with ShardVault Studio GUI](#13-managing-with-shardvault-studio-gui)
 
 ---
 
@@ -251,13 +255,143 @@ db.router().simulate_shard_corruption("jakarta")?;
 
 ---
 
-## 10. Managing with ShardVault Studio GUI
+## 10. Schema Introspection & Migrations
+
+ShardVault includes a universal declarative migration and schema introspection engine (`shardvault::migration`).
+
+### Running Versioned Migrations Across All Shards:
+Migrations execute in atomic transactions across `global.db` and all active `shards/<key>.db`, and automatically propagate DDL updates to all replica clones (`_read`, `_analytics`, `_standby`):
+
+```rust
+let mut runner = MigrationRunner::new();
+
+runner.add(Migration {
+    version: 1,
+    name: "create_loyalty_and_alter_orders",
+    target: MigrationTarget::ShardsOnly, // GlobalOnly, ShardsOnly, or All
+    up_sql: "CREATE TABLE loyalty_points (user_id TEXT PRIMARY KEY, points INTEGER NOT NULL);
+             ALTER TABLE orders ADD COLUMN discount_percent REAL DEFAULT 0.0;",
+    down_sql: None,
+});
+
+// Applies pending migrations and syncs all clones immediately
+let reports = db.run_migrations(&runner)?;
+for report in reports {
+    println!("Target {}: Applied migrations {:?}", report.target_name, report.applied_versions);
+}
+```
+
+### Runtime Schema Introspection & Drift Detection:
+Inspect tables, columns, indexes, and detect schema deviations between databases:
+
+```rust
+let manifest_global = db.introspect_global()?;
+let manifest_shard = db.introspect_shard("jakarta")?;
+
+// Returns a list of structural differences (missing columns, altered types, extra tables)
+let drift = detect_schema_drift(&manifest_global, &manifest_shard);
+if drift.is_empty() {
+    println!("Schemas are perfectly synchronized!");
+}
+```
+
+---
+
+## 11. Secure Database Transfer Package (.svp)
+
+When transferring a database to a backup archive or another physical computer, ShardVault uses the **`.svp` (ShardVault Package)** format. It features:
+- **Zero-Lock Atomic Snapshot**: Taken via SQLite Online Backup API.
+- **Envelope Encryption**: Data Encryption Key (DEK) encrypted by a Key Encryption Key (KEK) derived from a transfer passphrase via PBKDF2.
+- **High-Ratio Zstandard Compression (`zstd`)**: Typically 70-80% smaller than raw SQLite files.
+- **HMAC-SHA256 Digital Verification**: Any byte alteration in transit causes immediate rejection.
+- **Cross-Machine Re-Keying**: Safe adoption on machines with different hardware master salts.
+
+### Exporting a Shard to `.svp`:
+```rust
+let metadata = db.export_shard_package(
+    "jakarta",
+    "./backups/jakarta_export.svp",
+    "MyTransferPassphrase123!"
+)?;
+println!("Exported {} rows with SHA-256: {}", metadata.row_counts.len(), metadata.checksum_sha256);
+```
+
+### Importing a `.svp` Package into a Destination Machine:
+```rust
+let imported_meta = db.import_shard_package(
+    "./backups/jakarta_export.svp",
+    "jakarta_imported",
+    "MyTransferPassphrase123!"
+)?;
+println!("Successfully imported shard '{}' (v{}) with 3 instant replicas!", 
+    imported_meta.shard_key, imported_meta.schema_version);
+```
+
+---
+
+## 12. Distributed Data Synchronization (CDC + HLC)
+
+For multi-master, edge-to-cloud, or branch-to-HQ offline-first synchronization:
+
+### 1. Setting Up Change Data Capture (CDC):
+Automatically installs SQLite triggers on business tables to record mutations into `_shardvault_oplog`:
+```rust
+let sync_node = db.create_sync_engine("node_jakarta");
+
+db.write_shard("catalog", |conn| {
+    sync_node.register_table_for_cdc(conn, "products")?;
+    Ok(())
+})?;
+```
+
+### 2. Pushing Deltas to Peer / Cloud HQ:
+```rust
+let conn_arc = db.router().get_shard_conn("catalog", ShardRole::PrimaryWrite)?;
+let push_request = {
+    let conn = conn_arc.lock().unwrap();
+    sync_node.prepare_push_request(&conn, "catalog", 100)?
+};
+
+// Send `push_request` over HTTP, WebSocket, or gRPC...
+```
+
+### 3. Processing Incoming Push with Last-Write-Wins (LWW) Conflict Resolution:
+The receiver processes mutations, compares **Hybrid Logical Clock (HLC)** timestamps (Kulkarni et al. algorithm), and resolves conflicts deterministically:
+```rust
+let mut hq_conn = hq_conn_arc.lock().unwrap();
+let push_response = hq_sync.process_incoming_push(&mut hq_conn, &push_request)?;
+println!("Applied: {}, Ignored (local was newer): {}", 
+    push_response.applied_count, push_response.ignored_count);
+
+// Sender marks mutations acknowledged
+{
+    let conn = conn_arc.lock().unwrap();
+    let op_ids: Vec<i64> = push_request.operations.iter().map(|o| o.op_id).collect();
+    sync_node.acknowledge_push(&conn, &op_ids)?;
+}
+```
+
+---
+
+## 13. Managing with ShardVault Studio GUI
 
 You can manage any project's database using the bundled native desktop editor:
 
 ```powershell
 cd E:\shardvault-rs
+.\start-studio.bat "path/to/your/project/data"
+
+# Or via Cargo directly:
 cargo run --bin shardvault-studio -- "path/to/your/project/data"
 ```
+
+### Studio Capabilities:
+- **📊 Data Browser**: Live filtering, table inspection, and **One-Click AES-256-GCM Decryptor**.
+- **⚡ SQL Console**: Run queries with millisecond precision latency measurement against `PrimaryWrite`, `FastRead`, or `AnalyticsReport`.
+- **📐 Schema & DDL**: Inspect table schemas, columns, constraints, and indexes.
+- **🛡 Replication & Chaos**: Test simulated primary corruption and trigger zero-downtime hot standby promotion.
+- **🚀 Migrations**: View applied migrations from `_shardvault_migrations`, execute cluster-wide DDL, and detect schema drift.
+- **📦 Transfer (.svp)**: Wizard to export and import password-protected `.svp` database packages.
+- **🔄 Sync & Oplog**: Live stream of mutational CDC events, HLC clock status, and log cleanup tools.
 
 Enjoy building resilient, high-speed applications with **ShardVault-RS**!

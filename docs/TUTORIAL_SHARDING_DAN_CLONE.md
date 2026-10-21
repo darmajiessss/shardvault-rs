@@ -2,6 +2,8 @@
 
 Panduan teknis mendalam mengenai cara menambah partisi database (**Sharding**), mengelola replika data (**Clones**), membuat peran kloning kustom (**Custom Roles**), serta strategi sinkronisasi non-blocking pada engine **ShardVault-RS**.
 
+> 📦 *Untuk panduan migrasi skema, ekspor/impor paket portabel `.svp`, dan sinkronisasi data terdistribusi (CDC + HLC), baca [Tutorial Structure, Transfer, & Sync](TUTORIAL_TRANSFER_DAN_SYNC.md).*
+
 ---
 
 ## 📑 Daftar Isi
