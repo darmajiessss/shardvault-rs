@@ -340,6 +340,53 @@ impl ShardRouter {
         Ok(())
     }
 
+    /// Sinkronkan seluruh 3 kloning replika global (_read, _analytics, _standby)
+    pub fn sync_global_clones(&self) -> Result<(), ShardVaultError> {
+        for role in [ShardRole::FastRead, ShardRole::AnalyticsReport, ShardRole::HotStandby] {
+            self.sync_global_clone_replica(role)?;
+        }
+        Ok(())
+    }
+
+    /// Ambil daftar seluruh nama shard yang aktif (gabungan in-memory, catalog global, dan disk)
+    pub fn list_active_shards(&self) -> Result<Vec<String>, ShardVaultError> {
+        let mut shard_keys = std::collections::BTreeSet::new();
+
+        // 1. Dari cache in-memory
+        {
+            let shards_lock = self.shards.lock().unwrap();
+            for (k, _) in shards_lock.keys() {
+                shard_keys.insert(k.clone());
+            }
+        }
+
+        // 2. Dari katalog global
+        if let Ok(conn) = self.global_conn.lock() {
+            if let Ok(mut stmt) = conn.prepare("SELECT shard_key FROM _shardvault_shards") {
+                if let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) {
+                    for r in rows.flatten() {
+                        shard_keys.insert(r);
+                    }
+                }
+            }
+        }
+
+        // 3. Dari disk folder shards/
+        let shards_dir = self.config.data_dir.join("shards");
+        if let Ok(entries) = fs::read_dir(shards_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("db") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        shard_keys.insert(stem.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(shard_keys.into_iter().collect())
+    }
+
     /// Sinkronkan seluruh replika aktif di seluruh sistem
     pub fn sync_all_clones(&self) -> Result<(), ShardVaultError> {
         for role in [ShardRole::FastRead, ShardRole::AnalyticsReport, ShardRole::HotStandby] {

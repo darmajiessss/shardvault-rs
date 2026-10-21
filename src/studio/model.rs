@@ -50,6 +50,9 @@ pub enum ActiveTab {
     SqlConsole,
     SchemaInspector,
     ChaosStudio,
+    Migrations,
+    TransferHub,
+    SyncCenter,
 }
 
 impl fmt::Display for ActiveTab {
@@ -59,6 +62,9 @@ impl fmt::Display for ActiveTab {
             ActiveTab::SqlConsole => write!(f, "⚡ SQL Console"),
             ActiveTab::SchemaInspector => write!(f, "📐 Schema & DDL"),
             ActiveTab::ChaosStudio => write!(f, "🛡 Replication & Chaos"),
+            ActiveTab::Migrations => write!(f, "🚀 Migrations"),
+            ActiveTab::TransferHub => write!(f, "📦 Transfer (.svp)"),
+            ActiveTab::SyncCenter => write!(f, "🔄 Sync & Oplog"),
         }
     }
 }

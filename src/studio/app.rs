@@ -7,13 +7,16 @@ use std::time::Instant;
 
 use super::cluster_view::ChaosStudioView;
 use super::data_view::DataBrowserView;
+use super::migration_view::MigrationStudioView;
 use super::model::{ActiveTab, SelectedTarget};
 use super::query_view::SqlConsoleView;
 use super::schema_view::SchemaInspectorView;
 use super::sidebar::SidebarView;
+use super::sync_view::SyncStudioView;
 use super::theme::{
     apply_studio_theme, COLOR_HEALTHY, COLOR_SYNCING, COLOR_TEXT_MUTED, COLOR_TEXT_SECONDARY,
 };
+use super::transfer_view::TransferStudioView;
 use crate::config::EngineBuilder;
 use crate::engine::DatabaseEngine;
 
@@ -30,6 +33,9 @@ pub struct StudioApp {
     pub sql_view: SqlConsoleView,
     pub schema_view: SchemaInspectorView,
     pub chaos_view: ChaosStudioView,
+    pub migration_view: MigrationStudioView,
+    pub transfer_view: TransferStudioView,
+    pub sync_view: SyncStudioView,
 
     pub toast_message: Option<(String, Instant)>,
 }
@@ -59,6 +65,9 @@ impl StudioApp {
             sql_view: SqlConsoleView::default(),
             schema_view: SchemaInspectorView::default(),
             chaos_view: ChaosStudioView::default(),
+            migration_view: MigrationStudioView::default(),
+            transfer_view: TransferStudioView::default(),
+            sync_view: SyncStudioView::default(),
 
             toast_message: None,
         };
@@ -138,6 +147,9 @@ impl eframe::App for StudioApp {
                     ActiveTab::SqlConsole,
                     ActiveTab::SchemaInspector,
                     ActiveTab::ChaosStudio,
+                    ActiveTab::Migrations,
+                    ActiveTab::TransferHub,
+                    ActiveTab::SyncCenter,
                 ] {
                     let is_active = self.active_tab == tab;
                     let text = if is_active {
@@ -248,6 +260,30 @@ impl eframe::App for StudioApp {
                 }
                 ActiveTab::ChaosStudio => {
                     self.chaos_view.render(ui, engine, &mut pending_toast);
+                }
+                ActiveTab::Migrations => {
+                    self.migration_view.render(
+                        ui,
+                        &self.engine,
+                        &self.selected_target,
+                        &mut pending_toast,
+                    );
+                }
+                ActiveTab::TransferHub => {
+                    self.transfer_view.render(
+                        ui,
+                        &self.engine,
+                        &self.selected_target,
+                        &mut pending_toast,
+                    );
+                }
+                ActiveTab::SyncCenter => {
+                    self.sync_view.render(
+                        ui,
+                        &self.engine,
+                        &self.selected_target,
+                        &mut pending_toast,
+                    );
                 }
             }
         });

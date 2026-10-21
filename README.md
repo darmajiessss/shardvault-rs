@@ -6,7 +6,7 @@
 [![Rust](https://img.shields.io/badge/rust-edition%202021-orange.svg)](https://www.rust-lang.org/)
 [![SQLite](https://img.shields.io/badge/sqlite-WAL%20Mode-003B57.svg)](https://sqlite.org/)
 [![GUI](https://img.shields.io/badge/studio-egui%20%2F%20eframe-2b5c8f.svg)](#-shardvault-studio-desktop-editor)
-[![Status](https://img.shields.io/badge/tests-9%2F9%20passed%20(100%25)-brightgreen.svg)](#-testing--chaos-verification)
+[![Status](https://img.shields.io/badge/tests-12%2F12%20passed%20(100%25)-brightgreen.svg)](#-testing--chaos-verification)
 
 ---
 
@@ -32,11 +32,23 @@ Traditional SQLite is fast and easy to embed, but runs into hard limits when app
   - `HotStandby`: Mirror replica ready for instant disaster recovery failover.
 - **Online Backup Replication with Integrity Guard**: Synchronizes replicas on-the-fly via SQLite's native Online Backup API (`sqlite3_backup_*`), protected by a pre-sync `PRAGMA quick_check` guard to prevent corrupted primaries from poisoning healthy standbys.
 - **Instant Chaos Self-Healing (<50ms RTO)**: Automated startup quarantine (`.corrupted.<timestamp>`) and zero-downtime hot standby promotion, fully immune to Windows memory-mapped file lock conflicts (**OS Error 1224**).
+- **Structure & Universal Migration Engine (`shardvault::migration`)**:
+  - Declarative versioned migrations across Global DB and all active Shards in atomic transactions.
+  - Runtime DDL introspection (`PRAGMA table_info`, `sqlite_master`) and SHA-256 schema hash comparison to detect *Schema Drift*.
+  - Immediate auto-propagation of structural DDL changes to all replica clones (`_read`, `_analytics`, `_standby`).
+- **Secure Database Transfer Package (`.svp` - `shardvault::transfer`)**:
+  - Encrypted, portable database bundles combining SQLite snapshots with **Envelope Encryption** (DEK/KEK via PBKDF2 + AES-256-GCM).
+  - High-ratio **Zstandard (`zstd`)** compression and **HMAC-SHA256** digital integrity verification.
+  - Seamless cross-machine re-keying to adopt hardware-bound encryption keys on new nodes.
+- **Distributed Data Synchronization (`shardvault::sync`)**:
+  - **Hybrid Logical Clock (HLC)** generator (Kulkarni et al. algorithm) guaranteeing strict monotonic causality across physical clock skews.
+  - **Change Data Capture (CDC)** via automated SQLite triggers recording mutational streams to `_shardvault_oplog` with **Tombstone** deletion protocol.
+  - **Conflict Resolution Engine**: Deterministic Row-Level & Field-Level Last-Write-Wins (LWW) merging for edge-to-cloud and multi-master topologies.
 - **Hardware-Bound Zero-Trust Security**:
   - **AES-256-GCM** authenticated column encryption with random 12-byte nonces.
   - **PBKDF2-HMAC-SHA256** key derivation bound to machine hardware identifiers.
   - **HMAC-SHA256** tamper-evident integrity chains for out-of-band edit detection.
-- **Desktop Database Cockpit ([`ShardVault Studio`](#shardvault-studio-desktop-editor))**: Native GPU-accelerated desktop database browser, live AES decryptor, multi-target SQL console, and disaster recovery control hub.
+- **Desktop Database Cockpit ([`ShardVault Studio`](#shardvault-studio-desktop-editor))**: Native GPU-accelerated desktop database browser, live AES decryptor, multi-target SQL console, migration manager, `.svp` transfer wizard, and CDC oplog synchronization hub.
 
 ---
 
@@ -154,6 +166,17 @@ cargo run --bin shardvault-studio -- "./data"
    - One-click online clone replication.
    - **⚡ Chaos Simulation**: Injects corrupt bytes into primary to test automated healing.
    - **🚀 Emergency Hot Standby Promotion**: Zero-downtime failover with zero data loss.
+6. **🚀 Schema Migrations & Drift Detector**:
+   - Inspect applied migrations and SHA-256 checksums from `_shardvault_migrations`.
+   - Execute cluster-wide DDL migrations with automated clone synchronization.
+   - Compare schemas between Global and Shards to detect schema deviations.
+7. **📦 Database Transfer Wizard (.svp)**:
+   - Export any shard to a portable, password-protected `.svp` package with Zstd compression.
+   - Import `.svp` packages onto new nodes with automated hardware re-keying.
+8. **🔄 Distributed Sync Center & Oplog Monitor**:
+   - Live stream of mutational CDC events from `_shardvault_oplog`.
+   - Real-time Hybrid Logical Clock (HLC) monitor.
+   - One-click trigger CDC setup, manual sync acknowledgement, and log compaction.
 
 ---
 

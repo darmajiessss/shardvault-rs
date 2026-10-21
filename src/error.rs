@@ -56,6 +56,12 @@ pub enum ShardVaultError {
     #[error("Schema migration error: {0}")]
     Migration(String),
 
+    #[error("Database transfer package error: {0}")]
+    Transfer(String),
+
+    #[error("Distributed synchronization error: {0}")]
+    Sync(String),
+
     #[error("General engine error: {0}")]
     Other(String),
 }
