@@ -203,4 +203,16 @@ fn test_multi_target_code_and_dialect_generators() {
     let json_str = export_blueprint_json(&bp);
     let roundtrip: SchemaBlueprint = serde_json::from_str(&json_str).unwrap();
     assert_eq!(roundtrip.tables.len(), bp.tables.len());
+
+    // 4. Reverse-Engineer langsung dari skrip SQL DDL mentah (DrawDB Import from SQL)
+    let imported_from_sql =
+        SchemaBlueprint::from_sql_ddl_script(&sqlite_ddl, TableScope::Shard).unwrap();
+    assert_eq!(imported_from_sql.tables.len(), 4);
+    let imp_prod = imported_from_sql
+        .tables
+        .iter()
+        .find(|t| t.name == "products")
+        .unwrap();
+    assert_eq!(imp_prod.foreign_keys.len(), 1);
+    assert_eq!(imp_prod.foreign_keys[0].ref_table, "categories");
 }

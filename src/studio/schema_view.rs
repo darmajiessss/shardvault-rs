@@ -1623,6 +1623,27 @@ impl SchemaInspectorView {
                     Err(e) => *toast = Some(format!("Gagal membaca file: {}", e)),
                 }
             }
+
+            if self.codegen_format == CodegenOutputFormat::SqliteDdl
+                && ui.button("📂 Import SQL DDL dari Path").clicked()
+            {
+                match std::fs::read_to_string(&self.export_file_path) {
+                    Ok(raw_sql) => {
+                        match SchemaBlueprint::from_sql_ddl_script(&raw_sql, TableScope::Shard) {
+                            Ok(bp) => {
+                                self.blueprint = bp;
+                                self.selected_bp_table_idx = 0;
+                                *toast = Some(format!(
+                                    "Berhasil mengimpor {} tabel dari skrip SQL DDL!",
+                                    self.blueprint.tables.len()
+                                ));
+                            }
+                            Err(e) => *toast = Some(format!("Gagal mem-parsing SQL DDL: {}", e)),
+                        }
+                    }
+                    Err(e) => *toast = Some(format!("Gagal membaca file SQL: {}", e)),
+                }
+            }
         });
 
         ui.add_space(6.0);

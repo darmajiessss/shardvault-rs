@@ -227,6 +227,7 @@ For detailed step-by-step instructions on incorporating ShardVault into your pro
 - **[How to Use ShardVault in Your Project](docs/HOW_TO_USE.md)**
 - **[Panduan Lengkap: Sharding & Replikasi Multi-Clone](docs/TUTORIAL_SHARDING_DAN_CLONE.md)**
 - **[Panduan Lengkap: Database Structure, Transfer (.svp), & Sync Terdistribusi](docs/TUTORIAL_TRANSFER_DAN_SYNC.md)**
+- **[Panduan Lengkap: DrawDB Visual Schema Designer, Foreign Key Builder, & Code Generator](docs/TUTORIAL_SCHEMA_EDITOR_DAN_CODEGEN.md)**
 
 ---
 

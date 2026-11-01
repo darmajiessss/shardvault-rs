@@ -4,7 +4,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-use crate::migration::ddl::SchemaManifest;
+use crate::error::ShardVaultError;
+use crate::migration::ddl::{introspect_schema, SchemaManifest};
 
 /// Cakupan penempatan tabel di dalam arsitektur ShardVault
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -612,6 +613,24 @@ impl SchemaBlueprint {
         }
 
         issues
+    }
+
+    /// Reverse-Engineer langsung dari skrip SQL DDL mentah (`CREATE TABLE ...`) ala DrawDB "Import from SQL"
+    /// Menggunakan parser native SQLite in-memory untuk akurasi sintaks 100%
+    pub fn from_sql_ddl_script(
+        sql_ddl: &str,
+        default_scope: TableScope,
+    ) -> Result<Self, ShardVaultError> {
+        let mem_conn = rusqlite::Connection::open_in_memory()?;
+        // Matikan sementara penegakan FK saat parsing urutan CREATE TABLE bebas
+        mem_conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+        mem_conn.execute_batch(sql_ddl).map_err(|e| {
+            ShardVaultError::Migration(format!("Gagal mem-parsing skrip SQL DDL: {}", e))
+        })?;
+        let manifest = introspect_schema(&mem_conn)?;
+        let mut bp = Self::from_live_manifest(&manifest, default_scope);
+        bp.project_name = "Imported_SQL_Schema".to_string();
+        Ok(bp)
     }
 
     /// Reverse-Engineer dari `SchemaManifest` database SQLite yang sedang aktif
