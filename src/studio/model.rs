@@ -60,7 +60,7 @@ impl fmt::Display for ActiveTab {
         match self {
             ActiveTab::DataBrowser => write!(f, "📊 Data Browser"),
             ActiveTab::SqlConsole => write!(f, "⚡ SQL Console"),
-            ActiveTab::SchemaInspector => write!(f, "📐 Schema & DDL"),
+            ActiveTab::SchemaInspector => write!(f, "📐 Schema & DrawDB Studio"),
             ActiveTab::ChaosStudio => write!(f, "🛡 Replication & Chaos"),
             ActiveTab::Migrations => write!(f, "🚀 Migrations"),
             ActiveTab::TransferHub => write!(f, "📦 Transfer (.svp)"),

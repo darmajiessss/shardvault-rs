@@ -160,7 +160,12 @@ cargo run --bin shardvault-studio -- "./data"
    - Multi-target selector: run queries on Global or any Shard, directed to `PrimaryWrite`, `FastRead`, or `AnalyticsReport`.
    - Monospace editor with `Ctrl + Enter` execution.
    - Precision latency measurement (in milliseconds) and CSV export.
-4. **Schema DDL Inspector**: Inspect `CREATE TABLE` DDL, column definitions, and active indexes.
+4. **📐 DrawDB Visual Schema Designer, ER Diagram & Multi-Target Code Generator**:
+   - **Interactive ER Canvas (DrawDB-Style)**: Drag-and-drop tables, bounded **Subject Areas**, **Sticky Notes**, and visual **Foreign Key** connector lines with Cardinality badges (`N:1`, `1:N`, `1:1`).
+   - **First-Class Foreign Key & Table Designer**: Create/edit tables, columns, data types, Primary Keys, Foreign Keys (`ON DELETE` / `ON UPDATE` Cascade/Restrict/SetNull + Auto-Index FK), and column security flags (`🔒 AES-256-GCM` & `🛡️ HMAC-SHA256`).
+   - **Live Schema Issues Linter**: Detects missing Primary Keys, Foreign Key type mismatches, broken references, and cross-scope (`Global` vs `Shard`) warnings.
+   - **Smart Diff & SQLite 12-Step Safe Table Rebuild**: Automatically synthesizes transactional 12-step table rebuild scripts when adding Foreign Keys or changing column constraints on existing populated tables without losing data.
+   - **Multi-Target Code Generator**: Export to **Rust (`SchemaProvider` + AES/HMAC CRUD Repositories)**, **SQLite 3 DDL**, **PostgreSQL DDL**, **MySQL DDL**, **TypeScript Interfaces (`.ts`)**, and **DrawDB Blueprints (`.ddb.json`)**.
 5. **Replication & Chaos Disaster Hub**:
    - Live cluster telemetry (disk usage, active shards, WAL status).
    - One-click online clone replication.

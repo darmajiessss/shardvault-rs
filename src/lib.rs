@@ -4,6 +4,7 @@
 //! Ultra-Fast, Self-Healing, Hardware-Bound Multi-Shard SQLite Engine
 //! Dirancang untuk aplikasi Desktop (Rust/egui/Tauri), POS Offline-First, Edge Gateways, dan Multi-Tenant SaaS.
 
+pub mod codegen;
 pub mod config;
 pub mod crypto;
 pub mod engine;
@@ -17,6 +18,13 @@ pub mod transfer;
 pub mod types;
 
 pub mod prelude {
+    pub use crate::codegen::{
+        compile_blueprint_ddl, compile_table_ddl, diff_blueprint_against_manifest,
+        export_blueprint_json, generate_rust_code, generate_typescript_code, Cardinality,
+        ColumnBlueprint, DiffActionItem, DiffActionKind, ForeignKeyAction, ForeignKeyBlueprint,
+        IndexBlueprint, IssueSeverity, NoteBlueprint, SchemaBlueprint, SchemaDiffPlan, SchemaIssue,
+        SqlDialect, SqliteAffinity, SubjectAreaBlueprint, TableBlueprint, TableScope,
+    };
     pub use crate::config::{EngineBuilder, EngineConfig};
     pub use crate::crypto::{
         decrypt_string, derive_machine_key, encrypt_string, generate_signature, verify_signature,

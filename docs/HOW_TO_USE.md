@@ -373,7 +373,75 @@ println!("Applied: {}, Ignored (local was newer): {}",
 
 ---
 
-## 13. Managing with ShardVault Studio GUI
+## 13. Visual Schema Designer (DrawDB-Style), Foreign Key Builder & Code Generator (`shardvault::codegen`)
+
+ShardVault includes a full **DrawDB-inspired Visual Schema Blueprint AST, Smart Diff Planner (with SQLite 12-Step Safe Table Rebuild), and Multi-Target Code Generator**.
+
+### 1. Building a Schema Blueprint & Foreign Keys Programmatically:
+```rust
+use shardvault_rs::prelude::*;
+
+let mut bp = SchemaBlueprint::new_empty("MyEnterpriseApp");
+
+// Create Parent Table
+let mut depts = TableBlueprint::new("departments", TableScope::Global, 40.0, 60.0);
+depts.columns.push(ColumnBlueprint::new("dept_name", SqliteAffinity::Text));
+bp.tables.push(depts);
+
+// Create Child Table with Foreign Key + AES-256-GCM & HMAC Column Flags
+let mut employees = TableBlueprint::new("employees", TableScope::Global, 360.0, 60.0);
+employees.columns.push(ColumnBlueprint::new("dept_id", SqliteAffinity::Integer));
+employees.columns.push(ColumnBlueprint::new("full_name", SqliteAffinity::Text));
+
+let mut salary_enc = ColumnBlueprint::new("salary_enc", SqliteAffinity::Text);
+salary_enc.encrypted_aes = true;
+salary_enc.include_in_hmac = true;
+employees.columns.push(salary_enc);
+
+// Add Foreign Key (employees.dept_id -> departments.id ON DELETE CASCADE)
+employees.foreign_keys.push(ForeignKeyBlueprint::new(
+    "employees",
+    "dept_id",
+    "departments",
+    "id",
+    ForeignKeyAction::Cascade,
+));
+bp.tables.push(employees);
+
+// Validate Schema with DrawDB Linter
+let issues = bp.validate_issues();
+assert!(issues.iter().all(|i| i.severity != IssueSeverity::Error));
+```
+
+### 2. Generating Multi-Dialect SQL, Rust `SchemaProvider` + Repositories, & TypeScript:
+```rust
+// Generate SQLite, PostgreSQL, or MySQL DDL
+let sqlite_ddl = compile_blueprint_ddl(&bp, SqlDialect::Sqlite, None);
+let postgres_ddl = compile_blueprint_ddl(&bp, SqlDialect::Postgres, None);
+
+// Generate Rust SchemaProvider + AES-256-GCM / HMAC Typed CRUD Structs
+let rust_code = generate_rust_code(&bp);
+
+// Generate TypeScript Interfaces & Portable .ddb.json Blueprint
+let ts_code = generate_typescript_code(&bp);
+let ddb_json = export_blueprint_json(&bp);
+```
+
+### 3. Smart Diff & SQLite 12-Step Safe Table Rebuild:
+When you add a **Foreign Key** or alter column constraints on an already-populated SQLite table, `diff_blueprint_against_manifest` automatically synthesizes a transactional **12-Step Safe Table Rebuild** script that preserves all existing rows:
+```rust
+let live_manifest = db.introspect_global()?;
+let diff_plan = diff_blueprint_against_manifest(&bp, &live_manifest, Some(TableScope::Global), false);
+
+if !diff_plan.is_up_to_date() {
+    println!("Requires 12-step rebuild: {}", diff_plan.requires_rebuild);
+    println!("Generated Migration SQL:\n{}", diff_plan.migration_sql);
+}
+```
+
+---
+
+## 14. Managing with ShardVault Studio GUI
 
 You can manage any project's database using the bundled native desktop editor:
 
@@ -388,7 +456,12 @@ cargo run --bin shardvault-studio -- "path/to/your/project/data"
 ### Studio Capabilities:
 - **📊 Data Browser**: Live filtering, table inspection, and **One-Click AES-256-GCM Decryptor**.
 - **⚡ SQL Console**: Run queries with millisecond precision latency measurement against `PrimaryWrite`, `FastRead`, or `AnalyticsReport`.
-- **📐 Schema & DDL**: Inspect table schemas, columns, constraints, and indexes.
+- **📐 Schema & DrawDB Studio**:
+  - **🕸️ ER Diagram (DrawDB)**: Interactive 2D canvas with draggable tables, **Subject Areas**, **Sticky Notes**, and **Foreign Key** relationship connectors with Cardinality badges (`N:1`, `1:N`, `1:1`).
+  - **🛠️ Tables & Foreign Keys**: Visual builder for tables, columns, Foreign Keys (`ON DELETE` / `ON UPDATE`), composite indexes, and `🔒 AES-256` / `🛡️ HMAC` column flags.
+  - **⚠️ Issues Linter**: Real-time relational and type validation.
+  - **🔄 Smart Diff & Deploy**: Compare visual schema against live database and execute 12-Step Rebuild migrations in one click.
+  - **💻 Code & SQL Generator**: Export Rust `SchemaProvider` + repositories, SQLite/PostgreSQL/MySQL DDL, TypeScript types, and `.ddb.json` blueprints.
 - **🛡 Replication & Chaos**: Test simulated primary corruption and trigger zero-downtime hot standby promotion.
 - **🚀 Migrations**: View applied migrations from `_shardvault_migrations`, execute cluster-wide DDL, and detect schema drift.
 - **📦 Transfer (.svp)**: Wizard to export and import password-protected `.svp` database packages.
