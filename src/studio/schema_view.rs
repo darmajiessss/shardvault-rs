@@ -149,18 +149,18 @@ impl SchemaInspectorView {
                 .count();
 
             let issues_label = if err_count > 0 {
-                format!("⚠️ Issues ({} Err, {} Warn)", err_count, warn_count)
+                format!("⚠ Issues ({} Err, {} Warn)", err_count, warn_count)
             } else if warn_count > 0 {
-                format!("⚠️ Issues ({} Warn)", warn_count)
+                format!("⚠ Issues ({} Warn)", warn_count)
             } else {
                 "✅ Issues (0)".to_string()
             };
 
             let tabs = [
-                (SchemaStudioMode::ErCanvas, "🕸️ ER Diagram (DrawDB)"),
+                (SchemaStudioMode::ErCanvas, "📐 ER Diagram (DrawDB)"),
                 (
                     SchemaStudioMode::TableAndFkDesigner,
-                    "🛠️ Tables & Foreign Keys",
+                    "🔧 Tables & Foreign Keys",
                 ),
                 (SchemaStudioMode::IssuesLinter, issues_label.as_str()),
                 (SchemaStudioMode::SmartDiffDeploy, "🔄 Smart Diff & Deploy"),
@@ -221,13 +221,13 @@ impl SchemaInspectorView {
                 }
             }
 
-            if ui.button("🛒 Template: POS & Retail").clicked() {
+            if ui.button("📦 Template: POS & Retail").clicked() {
                 self.blueprint = SchemaBlueprint::template_pos_retail();
                 self.selected_bp_table_idx = 0;
                 *toast = Some("Template POS & Retail dimuat!".into());
             }
 
-            if ui.button("🏢 Template: SaaS Vault").clicked() {
+            if ui.button("🔒 Template: SaaS Vault").clicked() {
                 self.blueprint = SchemaBlueprint::template_saas_multitenant();
                 self.selected_bp_table_idx = 0;
                 *toast = Some("Template Multi-Tenant SaaS Vault dimuat!".into());
@@ -235,16 +235,16 @@ impl SchemaInspectorView {
 
             if ui.button("✨ Auto-Layout Grid").clicked() {
                 for (idx, tbl) in self.blueprint.tables.iter_mut().enumerate() {
-                    let col = idx % 3;
-                    let row = idx / 3;
-                    tbl.x = 50.0 + (col as f32) * 320.0;
-                    tbl.y = 60.0 + (row as f32) * 260.0;
+                    let col = idx % 2;
+                    let row = idx / 2;
+                    tbl.x = 50.0 + (col as f32) * 400.0;
+                    tbl.y = 70.0 + (row as f32) * 290.0;
                 }
                 self.canvas_pan = Vec2::ZERO;
                 *toast = Some("Tata letak diagram ER dirapikan!".into());
             }
 
-            if ui.button("🧹 Reset Kosong").clicked() {
+            if ui.button("🔄 Reset Kosong").clicked() {
                 self.blueprint = SchemaBlueprint::new_empty("New_ShardVault_Schema");
                 self.selected_bp_table_idx = 0;
             }
@@ -403,95 +403,11 @@ impl SchemaInspectorView {
             );
         }
 
-        // 3. Gambar Garis Relasi Foreign Key (Kurva & Cardinality Badges)
+        // 3. Gambar Kartu Tabel Interaktif (Draggable)
         let card_width = 250.0_f32;
         let header_height = 30.0_f32;
         let row_height = 20.0_f32;
 
-        for child_tbl in &self.blueprint.tables {
-            let child_pos = Pos2::new(origin.x + child_tbl.x, origin.y + child_tbl.y);
-
-            for fk in &child_tbl.foreign_keys {
-                if let Some(parent_tbl) = self
-                    .blueprint
-                    .tables
-                    .iter()
-                    .find(|t| t.name.eq_ignore_ascii_case(&fk.ref_table))
-                {
-                    let parent_pos = Pos2::new(origin.x + parent_tbl.x, origin.y + parent_tbl.y);
-
-                    let child_col_idx = child_tbl
-                        .columns
-                        .iter()
-                        .position(|c| c.name.eq_ignore_ascii_case(&fk.from_column))
-                        .unwrap_or(0);
-                    let parent_col_idx = parent_tbl
-                        .columns
-                        .iter()
-                        .position(|c| c.name.eq_ignore_ascii_case(&fk.ref_column))
-                        .unwrap_or(0);
-
-                    let child_y =
-                        child_pos.y + header_height + (child_col_idx as f32 + 0.5) * row_height;
-                    let parent_y =
-                        parent_pos.y + header_height + (parent_col_idx as f32 + 0.5) * row_height;
-
-                    let (start_pt, end_pt) = if child_pos.x + card_width < parent_pos.x {
-                        (
-                            Pos2::new(child_pos.x + card_width, child_y),
-                            Pos2::new(parent_pos.x, parent_y),
-                        )
-                    } else if parent_pos.x + card_width < child_pos.x {
-                        (
-                            Pos2::new(child_pos.x, child_y),
-                            Pos2::new(parent_pos.x + card_width, parent_y),
-                        )
-                    } else {
-                        (
-                            Pos2::new(child_pos.x + card_width, child_y),
-                            Pos2::new(parent_pos.x + card_width, parent_y),
-                        )
-                    };
-
-                    let mid_x = (start_pt.x + end_pt.x) * 0.5;
-                    let p1 = Pos2::new(mid_x, start_pt.y);
-                    let p2 = Pos2::new(mid_x, end_pt.y);
-
-                    let line_color = match fk.on_delete {
-                        ForeignKeyAction::Cascade => COLOR_HEALTHY,
-                        ForeignKeyAction::Restrict => COLOR_WARNING,
-                        _ => COLOR_SYNCING,
-                    };
-
-                    let stroke = Stroke::new(2.0_f32, line_color);
-                    painter.line_segment([start_pt, p1], stroke);
-                    painter.line_segment([p1, p2], stroke);
-                    painter.line_segment([p2, end_pt], stroke);
-
-                    painter.circle_filled(start_pt, 4.0, line_color);
-                    painter.circle_filled(end_pt, 4.0, COLOR_WARNING);
-
-                    // Badge Kardinalitas di tengah garis
-                    let mid_pt = Pos2::new(mid_x, (start_pt.y + end_pt.y) * 0.5);
-                    let badge_rect = Rect::from_center_size(mid_pt, Vec2::new(66.0, 18.0));
-                    painter.rect_filled(badge_rect, Rounding::same(4.0), COLOR_BG_SURFACE);
-                    painter.rect_stroke(
-                        badge_rect,
-                        Rounding::same(4.0),
-                        Stroke::new(1.0_f32, line_color),
-                    );
-                    painter.text(
-                        mid_pt,
-                        Align2::CENTER_CENTER,
-                        format!("{} ({})", fk.cardinality.short_badge(), fk.on_delete),
-                        FontId::monospace(9.5),
-                        COLOR_TEXT_PRIMARY,
-                    );
-                }
-            }
-        }
-
-        // 4. Gambar Kartu Tabel Interaktif (Draggable)
         let mut clicked_table_idx = None;
         for (idx, tbl) in self.blueprint.tables.iter_mut().enumerate() {
             let card_height = header_height + (tbl.columns.len().max(1) as f32 * row_height) + 8.0;
@@ -557,7 +473,7 @@ impl SchemaInspectorView {
                 Color32::from_rgb(226, 232, 240),
             );
 
-            // Daftar Kolom
+            // Daftar Kolom (Tanpa karakter \u{FE0F} agar 100% bersih tanpa kotak □)
             for (c_idx, col) in tbl.columns.iter().enumerate() {
                 let row_y = card_rect.top() + header_height + (c_idx as f32 * row_height) + 4.0;
                 let is_fk = tbl
@@ -565,25 +481,22 @@ impl SchemaInspectorView {
                     .iter()
                     .any(|f| f.from_column.eq_ignore_ascii_case(&col.name));
 
-                let mut icon_prefix = String::new();
-                if col.is_primary_key {
-                    icon_prefix.push_str("🔑 ");
+                let icon_prefix = if col.is_primary_key {
+                    "🔑 "
                 } else if is_fk {
-                    icon_prefix.push_str("🔗 ");
+                    "🔗 "
+                } else if col.encrypted_aes {
+                    "🔒 "
                 } else {
-                    icon_prefix.push_str("   ");
-                }
-                if col.encrypted_aes {
-                    icon_prefix.push('🔒');
-                }
-                if col.include_in_hmac && col.name != "signature" {
-                    icon_prefix.push_str("🛡️");
-                }
+                    "   "
+                };
 
                 let name_color = if col.is_primary_key {
                     COLOR_WARNING
                 } else if is_fk {
                     COLOR_SYNCING
+                } else if col.encrypted_aes {
+                    COLOR_HEALTHY
                 } else {
                     COLOR_TEXT_PRIMARY
                 };
@@ -597,10 +510,11 @@ impl SchemaInspectorView {
                 );
 
                 let nn_mark = if col.not_null { "*" } else { "?" };
+                let sec_tag = if col.encrypted_aes { "AES " } else { "" };
                 painter.text(
                     Pos2::new(card_rect.right() - 8.0, row_y + row_height * 0.5),
                     Align2::RIGHT_CENTER,
-                    format!("{}{}", col.col_type, nn_mark),
+                    format!("{}{}{}", sec_tag, col.col_type, nn_mark),
                     FontId::monospace(10.5),
                     COLOR_PURPLE,
                 );
@@ -611,11 +525,97 @@ impl SchemaInspectorView {
             self.selected_bp_table_idx = sel;
         }
 
+        // 4. Gambar Garis Relasi Foreign Key & Badge Kardinalitas DI ATAS Kartu Tabel agar tidak tertutup
+        for child_tbl in &self.blueprint.tables {
+            let child_pos = Pos2::new(origin.x + child_tbl.x, origin.y + child_tbl.y);
+
+            for fk in &child_tbl.foreign_keys {
+                if let Some(parent_tbl) = self
+                    .blueprint
+                    .tables
+                    .iter()
+                    .find(|t| t.name.eq_ignore_ascii_case(&fk.ref_table))
+                {
+                    let parent_pos = Pos2::new(origin.x + parent_tbl.x, origin.y + parent_tbl.y);
+
+                    let child_col_idx = child_tbl
+                        .columns
+                        .iter()
+                        .position(|c| c.name.eq_ignore_ascii_case(&fk.from_column))
+                        .unwrap_or(0);
+                    let parent_col_idx = parent_tbl
+                        .columns
+                        .iter()
+                        .position(|c| c.name.eq_ignore_ascii_case(&fk.ref_column))
+                        .unwrap_or(0);
+
+                    let child_y =
+                        child_pos.y + header_height + (child_col_idx as f32 + 0.5) * row_height + 4.0;
+                    let parent_y =
+                        parent_pos.y + header_height + (parent_col_idx as f32 + 0.5) * row_height + 4.0;
+
+                    let (start_pt, end_pt) = if child_pos.x + card_width < parent_pos.x {
+                        (
+                            Pos2::new(child_pos.x + card_width, child_y),
+                            Pos2::new(parent_pos.x, parent_y),
+                        )
+                    } else if parent_pos.x + card_width < child_pos.x {
+                        (
+                            Pos2::new(child_pos.x, child_y),
+                            Pos2::new(parent_pos.x + card_width, parent_y),
+                        )
+                    } else {
+                        (
+                            Pos2::new(child_pos.x + card_width, child_y),
+                            Pos2::new(parent_pos.x + card_width, parent_y),
+                        )
+                    };
+
+                    let mid_x = (start_pt.x + end_pt.x) * 0.5;
+                    let p1 = Pos2::new(mid_x, start_pt.y);
+                    let p2 = Pos2::new(mid_x, end_pt.y);
+
+                    let line_color = match fk.on_delete {
+                        ForeignKeyAction::Cascade => COLOR_HEALTHY,
+                        ForeignKeyAction::Restrict => COLOR_WARNING,
+                        _ => COLOR_SYNCING,
+                    };
+
+                    let stroke = Stroke::new(2.0_f32, line_color);
+                    painter.line_segment([start_pt, p1], stroke);
+                    painter.line_segment([p1, p2], stroke);
+                    painter.line_segment([p2, end_pt], stroke);
+
+                    painter.circle_filled(start_pt, 4.0, line_color);
+                    painter.circle_filled(end_pt, 4.0, COLOR_WARNING);
+
+                    // Badge Kardinalitas Dinamis di tengah garis
+                    let badge_label = format!("{} ({})", fk.cardinality.short_badge(), fk.on_delete);
+                    let badge_width = (badge_label.len() as f32 * 6.4 + 14.0).max(96.0);
+                    let mid_pt = Pos2::new(mid_x, (start_pt.y + end_pt.y) * 0.5);
+                    let badge_rect = Rect::from_center_size(mid_pt, Vec2::new(badge_width, 20.0));
+                    painter.rect_filled(badge_rect, Rounding::same(4.0), COLOR_BG_SURFACE);
+                    painter.rect_stroke(
+                        badge_rect,
+                        Rounding::same(4.0),
+                        Stroke::new(1.2_f32, line_color),
+                    );
+                    painter.text(
+                        mid_pt,
+                        Align2::CENTER_CENTER,
+                        badge_label,
+                        FontId::monospace(10.0),
+                        COLOR_TEXT_PRIMARY,
+                    );
+                }
+            }
+        }
+
         // 5. Gambar Sticky Notes Interaktif (Draggable)
         for (n_idx, note) in self.blueprint.notes.iter_mut().enumerate() {
             let note_rect = Rect::from_min_size(
                 Pos2::new(origin.x + note.x, origin.y + note.y),
-                Vec2::new(220.0, 95.0),
+                Vec2::new(285.0, 95.0),
             );
             let id = ui.make_persistent_id(format!("er_sticky_note_{}", n_idx));
             let resp = ui.interact(note_rect, id, Sense::drag());
@@ -740,7 +740,7 @@ impl SchemaInspectorView {
             // 1. Properti Tabel
             ui.group(|ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("⚙️ Properti Tabel:").strong().color(COLOR_SYNCING));
+                    ui.label(RichText::new("⚙ Properti Tabel:").strong().color(COLOR_SYNCING));
                     ui.label("Nama:");
                     ui.add(egui::TextEdit::singleline(&mut tbl.name).desired_width(140.0));
 
@@ -758,7 +758,7 @@ impl SchemaInspectorView {
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .button(RichText::new("🗑️ Hapus Tabel").color(COLOR_DANGER))
+                            .button(RichText::new("✖ Hapus Tabel").color(COLOR_DANGER))
                             .clicked()
                         {
                             delete_current_table = true;
@@ -832,7 +832,7 @@ impl SchemaInspectorView {
                         ui.label(RichText::new("NOT NULL").strong());
                         ui.label(RichText::new("UNIQUE").strong());
                         ui.label(RichText::new("🔒 AES-256").strong().color(COLOR_HEALTHY));
-                        ui.label(RichText::new("🛡️ HMAC").strong().color(COLOR_SYNCING));
+                        ui.label(RichText::new("🛡 HMAC").strong().color(COLOR_SYNCING));
                         ui.label(RichText::new("DEFAULT").strong());
                         ui.label(RichText::new("CHECK (...)").strong());
                         ui.label(RichText::new("Aksi").color(COLOR_DANGER));
@@ -898,7 +898,7 @@ impl SchemaInspectorView {
                                 };
                             }
 
-                            if ui.small_button("🗑️").clicked() {
+                            if ui.small_button("✖").clicked() {
                                 remove_col_idx = Some(c_idx);
                             }
                             ui.end_row();
@@ -1157,7 +1157,7 @@ impl SchemaInspectorView {
 
                                 ui.checkbox(&mut fk.auto_index_fk, "");
 
-                                if ui.small_button("🗑️").clicked() {
+                                if ui.small_button("✖").clicked() {
                                     remove_fk_idx = Some(fk_idx);
                                 }
                                 ui.end_row();
@@ -1224,7 +1224,7 @@ impl SchemaInspectorView {
                             ))
                             .monospace(),
                         );
-                        if ui.small_button("🗑️").clicked() {
+                        if ui.small_button("✖").clicked() {
                             remove_idx = Some(i_idx);
                         }
                     });
@@ -1248,7 +1248,7 @@ impl SchemaInspectorView {
     fn render_issues_linter(&mut self, ui: &mut Ui) {
         let issues = self.blueprint.validate_issues();
         ui.label(
-            RichText::new("🛡️ DrawDB Schema Issue Detector & Relational Integrity Validator")
+            RichText::new("🛡 DrawDB Schema Issue Detector & Relational Integrity Validator")
                 .size(14.0)
                 .strong()
                 .color(COLOR_SYNCING),
@@ -1277,8 +1277,8 @@ impl SchemaInspectorView {
             for issue in issues {
                 let (badge, color) = match issue.severity {
                     IssueSeverity::Error => ("❌ ERROR", COLOR_DANGER),
-                    IssueSeverity::Warning => ("⚠️ WARNING", COLOR_WARNING),
-                    IssueSeverity::Info => ("ℹ️ INFO", COLOR_SYNCING),
+                    IssueSeverity::Warning => ("⚠ WARNING", COLOR_WARNING),
+                    IssueSeverity::Info => ("ℹ INFO", COLOR_SYNCING),
                 };
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
@@ -1359,7 +1359,7 @@ impl SchemaInspectorView {
         if diff_plan.requires_rebuild {
             ui.group(|ui| {
                 ui.label(
-                    RichText::new("🛡️ SQLite 12-Step Safe Table Rebuild Aktif!")
+                    RichText::new("🛡 SQLite 12-Step Safe Table Rebuild Aktif!")
                         .color(COLOR_WARNING)
                         .strong(),
                 );
@@ -1512,27 +1512,27 @@ impl SchemaInspectorView {
             let formats = [
                 (
                     CodegenOutputFormat::RustSchemaAndRepo,
-                    "🦀 Rust (SchemaProvider + AES/HMAC Repo)",
+                    "⚙ Rust (SchemaProvider + AES/HMAC Repo)",
                     "./generated_schema.rs",
                 ),
                 (
                     CodegenOutputFormat::SqliteDdl,
-                    "🗄️ SQLite 3 DDL (.sql)",
+                    "📦 SQLite 3 DDL (.sql)",
                     "./schema_sqlite.sql",
                 ),
                 (
                     CodegenOutputFormat::PostgresDdl,
-                    "🐘 PostgreSQL DDL (.sql)",
+                    "📄 PostgreSQL DDL (.sql)",
                     "./schema_postgres.sql",
                 ),
                 (
                     CodegenOutputFormat::MysqlDdl,
-                    "🐬 MySQL / MariaDB DDL (.sql)",
+                    "📄 MySQL / MariaDB DDL (.sql)",
                     "./schema_mysql.sql",
                 ),
                 (
                     CodegenOutputFormat::TypeScriptInterfaces,
-                    "📘 TypeScript Interfaces (.ts)",
+                    "💻 TypeScript Interfaces (.ts)",
                     "./schema_types.ts",
                 ),
                 (

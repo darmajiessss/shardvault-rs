@@ -646,8 +646,8 @@ impl SchemaBlueprint {
 
             let grid_col = idx % cols_per_row;
             let grid_row = idx / cols_per_row;
-            let x = 40.0 + (grid_col as f32) * 310.0;
-            let y = 50.0 + (grid_row as f32) * 260.0;
+            let x = 50.0 + (grid_col as f32) * 410.0;
+            let y = 60.0 + (grid_row as f32) * 260.0;
 
             let upper_sql = live_tbl.sql.to_uppercase();
             let is_autoinc = upper_sql.contains("AUTOINCREMENT");
@@ -767,7 +767,7 @@ impl SchemaBlueprint {
             ColumnBlueprint::new("name", SqliteAffinity::Text),
         ];
 
-        let mut products = TableBlueprint::new("products", TableScope::Global, 370.0, 70.0);
+        let mut products = TableBlueprint::new("products", TableScope::Global, 450.0, 70.0);
         products.comment = "Katalog produk beserta HPP terenkripsi AES-256-GCM".to_string();
         let mut hpp_col = ColumnBlueprint::new("cost_price_enc", SqliteAffinity::Text);
         hpp_col.encrypted_aes = true;
@@ -808,7 +808,7 @@ impl SchemaBlueprint {
             ColumnBlueprint::new("signature", SqliteAffinity::Text),
         ];
 
-        let mut order_items = TableBlueprint::new("order_items", TableScope::Shard, 370.0, 360.0);
+        let mut order_items = TableBlueprint::new("order_items", TableScope::Shard, 450.0, 360.0);
         order_items.comment = "Detail item belanja yang merujuk ke orders".to_string();
         order_items.columns = vec![
             ColumnBlueprint::primary_key_int("id"),
@@ -835,23 +835,23 @@ impl SchemaBlueprint {
                     color_hex: "#0284c7".to_string(),
                     x: 30.0,
                     y: 35.0,
-                    width: 620.0,
+                    width: 700.0,
                     height: 270.0,
                 },
                 SubjectAreaBlueprint {
-                    name: "🧾 Sharded Branch Transactions (Auto-CDC)".to_string(),
+                    name: "⚡ Sharded Branch Transactions (Auto-CDC)".to_string(),
                     color_hex: "#7e22ce".to_string(),
                     x: 30.0,
                     y: 325.0,
-                    width: 620.0,
+                    width: 700.0,
                     height: 270.0,
                 },
             ],
             notes: vec![NoteBlueprint {
                 title: "🔐 Keamanan HPP & Integritas Struk".to_string(),
-                content: "Kolom cost_price_enc dienkripsi dengan AES-256-GCM.\nSetiap baris orders memiliki HMAC-SHA256 signature.".to_string(),
+                content: "Kolom cost_price_enc dienkripsi AES-256-GCM.\nSetiap baris orders memiliki HMAC-SHA256.".to_string(),
                 color_hex: "#10b981".to_string(),
-                x: 680.0,
+                x: 755.0,
                 y: 70.0,
             }],
         }
@@ -866,7 +866,7 @@ impl SchemaBlueprint {
             ColumnBlueprint::new("plan_tier", SqliteAffinity::Text),
         ];
 
-        let mut users = TableBlueprint::new("tenant_users", TableScope::Global, 370.0, 70.0);
+        let mut users = TableBlueprint::new("tenant_users", TableScope::Global, 450.0, 70.0);
         let mut api_secret = ColumnBlueprint::new("api_secret_enc", SqliteAffinity::Text);
         api_secret.encrypted_aes = true;
         api_secret.include_in_hmac = true;
@@ -895,7 +895,7 @@ impl SchemaBlueprint {
             ColumnBlueprint::new("signature", SqliteAffinity::Text),
         ];
 
-        let mut doc_versions = TableBlueprint::new("document_versions", TableScope::Shard, 370.0, 350.0);
+        let mut doc_versions = TableBlueprint::new("document_versions", TableScope::Shard, 450.0, 350.0);
         doc_versions.columns = vec![
             ColumnBlueprint::primary_key_int("version_id"),
             ColumnBlueprint::new("doc_id", SqliteAffinity::Text),
@@ -915,11 +915,11 @@ impl SchemaBlueprint {
             tables: vec![tenants, users, documents, doc_versions],
             subject_areas: vec![
                 SubjectAreaBlueprint {
-                    name: "🏢 Global Control Plane".to_string(),
+                    name: "📦 Global Control Plane".to_string(),
                     color_hex: "#0284c7".to_string(),
                     x: 30.0,
                     y: 35.0,
-                    width: 620.0,
+                    width: 700.0,
                     height: 260.0,
                 },
                 SubjectAreaBlueprint {
@@ -927,15 +927,15 @@ impl SchemaBlueprint {
                     color_hex: "#7e22ce".to_string(),
                     x: 30.0,
                     y: 315.0,
-                    width: 620.0,
+                    width: 700.0,
                     height: 260.0,
                 },
             ],
             notes: vec![NoteBlueprint {
                 title: "📌 Isolasi Per Tenant".to_string(),
-                content: "Setiap tenant memiliki file shard terpisah dengan replika otomatis.".to_string(),
+                content: "Setiap tenant memiliki file shard terpisah\ndengan replika otomatis.".to_string(),
                 color_hex: "#38bdf8".to_string(),
-                x: 680.0,
+                x: 755.0,
                 y: 70.0,
             }],
         }

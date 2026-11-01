@@ -58,7 +58,7 @@ impl SyncStudioView {
                 .rounding(6.0)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("⚙️ Konfigurasi CDC & Node HLC:").size(13.0).strong().color(COLOR_SYNCING));
+                        ui.label(RichText::new("⚙ Konfigurasi CDC & Node HLC:").size(13.0).strong().color(COLOR_SYNCING));
                         ui.label(RichText::new(format!("({})", selected_target.display_title())).size(11.0).color(COLOR_TEXT_MUTED));
                     });
                     ui.add_space(6.0);
