@@ -1,7 +1,7 @@
 @echo off
 title ShardVault Studio
 echo ========================================================
-echo  Starting ShardVault Studio (Database Cockpit & Editor)
+echo  Starting ShardVault Studio (Database Cockpit and Editor)
 echo ========================================================
 cd /d "%~dp0"
 
@@ -15,9 +15,9 @@ if "%DATA_DIR%"=="" (
 )
 
 if exist "target\debug\shardvault-studio.exe" (
-    echo Menjalankan binary shardvault-studio.exe (%DATA_DIR%)...
+    echo Menjalankan binary shardvault-studio.exe [%DATA_DIR%]...
     start "" "target\debug\shardvault-studio.exe" "%DATA_DIR%"
 ) else (
-    echo Mengompilasi dan menjalankan ShardVault Studio (%DATA_DIR%)...
+    echo Mengompilasi dan menjalankan ShardVault Studio [%DATA_DIR%]...
     cargo run --bin shardvault-studio -- "%DATA_DIR%"
 )
