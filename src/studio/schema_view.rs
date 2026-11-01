@@ -132,6 +132,56 @@ impl Default for SchemaInspectorView {
 }
 
 impl SchemaInspectorView {
+    /// Menghitung batas luar (bounding box) seluruh komponen skema: tabel, area domain, dan catatan
+    pub fn compute_schema_bounds(&self) -> (f32, f32, f32, f32) {
+        if self.blueprint.tables.is_empty()
+            && self.blueprint.subject_areas.is_empty()
+            && self.blueprint.notes.is_empty()
+        {
+            return (0.0, 800.0, 0.0, 600.0);
+        }
+
+        let mut min_x = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut min_y = f32::MAX;
+        let mut max_y = f32::MIN;
+
+        for tbl in &self.blueprint.tables {
+            let card_height = 32.0 + (tbl.columns.len().max(1) as f32 * 20.0) + 8.0;
+            min_x = min_x.min(tbl.x);
+            max_x = max_x.max(tbl.x + 250.0);
+            min_y = min_y.min(tbl.y);
+            max_y = max_y.max(tbl.y + card_height);
+        }
+
+        for area in &self.blueprint.subject_areas {
+            min_x = min_x.min(area.x);
+            max_x = max_x.max(area.x + area.width);
+            min_y = min_y.min(area.y);
+            max_y = max_y.max(area.y + area.height);
+        }
+
+        for note in &self.blueprint.notes {
+            min_x = min_x.min(note.x);
+            max_x = max_x.max(note.x + 240.0);
+            min_y = min_y.min(note.y);
+            max_y = max_y.max(note.y + 120.0);
+        }
+
+        (min_x, max_x, min_y, max_y)
+    }
+
+    /// Menyesuaikan posisi pan kanvas agar seluruh item skema terpusat di tengah layar
+    pub fn center_all_items(&mut self, canvas_size: Vec2) {
+        let (min_x, max_x, min_y, max_y) = self.compute_schema_bounds();
+        let center_x = (min_x + max_x) * 0.5;
+        let center_y = (min_y + max_y) * 0.5;
+        self.canvas_pan = Vec2::new(
+            canvas_size.x * 0.5 - center_x,
+            canvas_size.y * 0.5 - center_y,
+        );
+    }
+
     pub fn render(
         &mut self,
         ui: &mut Ui,
@@ -202,66 +252,70 @@ impl SchemaInspectorView {
         ui.add_space(4.0);
 
         // Bar Aksi Cepat Blueprint (Reverse-Engineer, Template, Auto-Layout)
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Project:").color(COLOR_TEXT_MUTED));
-            ui.add(egui::TextEdit::singleline(&mut self.blueprint.project_name).desired_width(150.0));
+        ScrollArea::horizontal()
+            .id_salt("bp_top_bar_scroll")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Project:").color(COLOR_TEXT_MUTED));
+                    ui.add(egui::TextEdit::singleline(&mut self.blueprint.project_name).desired_width(150.0));
 
-            if ui
-                .button(RichText::new("📥 Import dari Live DB").color(COLOR_HEALTHY))
-                .on_hover_text("Reverse-engineer tabel, kolom, dan Foreign Key dari koneksi database aktif")
-                .clicked()
-            {
-                if let Some(conn_arc) = self.open_target_conn(engine, selected_target, toast) {
-                    let conn = conn_arc.lock().unwrap();
-                    match introspect_schema(&conn) {
-                        Ok(manifest) => {
-                            let default_scope = match selected_target {
-                                SelectedTarget::Global(_) => TableScope::Global,
-                                SelectedTarget::Shard { .. } => TableScope::Shard,
-                            };
-                            self.blueprint = SchemaBlueprint::from_live_manifest(&manifest, default_scope);
-                            self.selected_bp_table_idx = 0;
-                            *toast = Some(format!(
-                                "Berhasil mengimpor {} tabel dari {} ke DrawDB Editor!",
-                                self.blueprint.tables.len(),
-                                selected_target.display_title()
-                            ));
-                        }
-                        Err(e) => {
-                            *toast = Some(format!("Gagal introspeksi DB: {}", e));
+                    if ui
+                        .button(RichText::new("📥 Import dari Live DB").color(COLOR_HEALTHY))
+                        .on_hover_text("Reverse-engineer tabel, kolom, dan Foreign Key dari koneksi database aktif")
+                        .clicked()
+                    {
+                        if let Some(conn_arc) = self.open_target_conn(engine, selected_target, toast) {
+                            let conn = conn_arc.lock().unwrap();
+                            match introspect_schema(&conn) {
+                                Ok(manifest) => {
+                                    let default_scope = match selected_target {
+                                        SelectedTarget::Global(_) => TableScope::Global,
+                                        SelectedTarget::Shard { .. } => TableScope::Shard,
+                                    };
+                                    self.blueprint = SchemaBlueprint::from_live_manifest(&manifest, default_scope);
+                                    self.selected_bp_table_idx = 0;
+                                    *toast = Some(format!(
+                                        "Berhasil mengimpor {} tabel dari {} ke DrawDB Editor!",
+                                        self.blueprint.tables.len(),
+                                        selected_target.display_title()
+                                    ));
+                                }
+                                Err(e) => {
+                                    *toast = Some(format!("Gagal introspeksi DB: {}", e));
+                                }
+                            }
                         }
                     }
-                }
-            }
 
-            if ui.button("📦 Template: POS & Retail").clicked() {
-                self.blueprint = SchemaBlueprint::template_pos_retail();
-                self.selected_bp_table_idx = 0;
-                *toast = Some("Template POS & Retail dimuat!".into());
-            }
+                    if ui.button("📦 Template: POS & Retail").clicked() {
+                        self.blueprint = SchemaBlueprint::template_pos_retail();
+                        self.selected_bp_table_idx = 0;
+                        *toast = Some("Template POS & Retail dimuat!".into());
+                    }
 
-            if ui.button("🔒 Template: SaaS Vault").clicked() {
-                self.blueprint = SchemaBlueprint::template_saas_multitenant();
-                self.selected_bp_table_idx = 0;
-                *toast = Some("Template Multi-Tenant SaaS Vault dimuat!".into());
-            }
+                    if ui.button("🔒 Template: SaaS Vault").clicked() {
+                        self.blueprint = SchemaBlueprint::template_saas_multitenant();
+                        self.selected_bp_table_idx = 0;
+                        *toast = Some("Template Multi-Tenant SaaS Vault dimuat!".into());
+                    }
 
-            if ui.button("✨ Auto-Layout Grid").clicked() {
-                for (idx, tbl) in self.blueprint.tables.iter_mut().enumerate() {
-                    let col = idx % 2;
-                    let row = idx / 2;
-                    tbl.x = 50.0 + (col as f32) * 400.0;
-                    tbl.y = 70.0 + (row as f32) * 290.0;
-                }
-                self.canvas_pan = Vec2::ZERO;
-                *toast = Some("Tata letak diagram ER dirapikan!".into());
-            }
+                    if ui.button("✨ Auto-Layout Grid").clicked() {
+                        for (idx, tbl) in self.blueprint.tables.iter_mut().enumerate() {
+                            let col = idx % 2;
+                            let row = idx / 2;
+                            tbl.x = 50.0 + (col as f32) * 400.0;
+                            tbl.y = 70.0 + (row as f32) * 290.0;
+                        }
+                        self.canvas_pan = Vec2::ZERO;
+                        *toast = Some("Tata letak diagram ER dirapikan!".into());
+                    }
 
-            if ui.button("🔄 Reset Kosong").clicked() {
-                self.blueprint = SchemaBlueprint::new_empty("New_ShardVault_Schema");
-                self.selected_bp_table_idx = 0;
-            }
-        });
+                    if ui.button("🔄 Reset Kosong").clicked() {
+                        self.blueprint = SchemaBlueprint::new_empty("New_ShardVault_Schema");
+                        self.selected_bp_table_idx = 0;
+                    }
+                });
+            });
 
         ui.separator();
 
@@ -356,122 +410,157 @@ impl SchemaInspectorView {
         }
 
         // 2. Toolbar Atas Kanvas (Tombol Simpan 1-Klik, Reset Layar, Toggle Panel)
-        ui.horizontal(|ui| {
-            let pal_text = if self.show_palette_panel {
-                "◀ Sembunyikan Palet"
-            } else {
-                "▶ Buka Palet Blok"
-            };
-            if ui.selectable_label(self.show_palette_panel, pal_text).clicked() {
-                self.show_palette_panel = !self.show_palette_panel;
-            }
-
-            ui.separator();
-
-            // Tombol Hijau 1-Klik: Simpan & Terapkan ke Database Aktif
-            if ui
-                .button(
-                    RichText::new("💾 Simpan & Terapkan ke Database")
-                        .size(12.5)
-                        .color(COLOR_HEALTHY)
-                        .strong(),
-                )
-                .on_hover_text("Bandingkan perubahan visual dengan database dan simpan langsung secara aman tanpa kehilangan data lama")
-                .clicked()
-            {
-                if let Some(conn_arc) = self.open_target_conn(engine, selected_target, toast) {
-                    let manifest_res = {
-                        let conn = conn_arc.lock().unwrap();
-                        introspect_schema(&conn)
+        ScrollArea::horizontal()
+            .id_salt("er_canvas_toolbar_scroll")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let pal_text = if self.show_palette_panel {
+                        "◀ Sembunyikan Palet"
+                    } else {
+                        "▶ Buka Palet Blok"
                     };
-                    match manifest_res {
-                        Ok(manifest) => {
-                            let scope_filter = match selected_target {
-                                SelectedTarget::Global(_) => Some(TableScope::Global),
-                                SelectedTarget::Shard { .. } => Some(TableScope::Shard),
+                    if ui.selectable_label(self.show_palette_panel, pal_text).clicked() {
+                        self.show_palette_panel = !self.show_palette_panel;
+                    }
+
+                    ui.separator();
+
+                    // Tombol Hijau 1-Klik: Simpan & Terapkan ke Database Aktif
+                    if ui
+                        .button(
+                            RichText::new("💾 Simpan & Terapkan ke Database")
+                                .size(12.5)
+                                .color(COLOR_HEALTHY)
+                                .strong(),
+                        )
+                        .on_hover_text("Bandingkan perubahan visual dengan database dan simpan langsung secara aman tanpa kehilangan data lama")
+                        .clicked()
+                    {
+                        if let Some(conn_arc) = self.open_target_conn(engine, selected_target, toast) {
+                            let manifest_res = {
+                                let conn = conn_arc.lock().unwrap();
+                                introspect_schema(&conn)
                             };
-                            let diff_plan = diff_blueprint_against_manifest(
-                                &self.blueprint,
-                                &manifest,
-                                scope_filter,
-                                self.allow_destructive_drops,
-                            );
-                            if diff_plan.is_up_to_date() {
-                                *toast = Some("Database sudah 100% selaras dengan skema kanvas!".into());
-                            } else {
-                                let leaked_name: &'static str = Box::leak(
-                                    format!("studio_auto_sync_{}", self.deploy_migration_version)
-                                        .into_boxed_str(),
-                                );
-                                let leaked_sql: &'static str =
-                                    Box::leak(diff_plan.migration_sql.clone().into_boxed_str());
-                                let mut runner = MigrationRunner::new();
-                                runner.add(Migration {
-                                    version: self.deploy_migration_version,
-                                    name: leaked_name,
-                                    target: self.deploy_target,
-                                    up_sql: leaked_sql,
-                                    down_sql: None,
-                                });
-                                match engine.run_migrations(&runner) {
-                                    Ok(reports) => {
-                                        self.deploy_migration_version += 1;
-                                        *toast = Some(format!(
-                                            "Berhasil! Perubahan skema disimpan ke {} database! (12-Step Rebuild: {})",
-                                            reports.len(),
-                                            if diff_plan.requires_rebuild { "Ya" } else { "Tidak" }
-                                        ));
-                                    }
-                                    Err(e) => {
-                                        *toast = Some(format!("Gagal menerapkan ke database: {}", e));
+                            match manifest_res {
+                                Ok(manifest) => {
+                                    let scope_filter = match selected_target {
+                                        SelectedTarget::Global(_) => Some(TableScope::Global),
+                                        SelectedTarget::Shard { .. } => Some(TableScope::Shard),
+                                    };
+                                    let diff_plan = diff_blueprint_against_manifest(
+                                        &self.blueprint,
+                                        &manifest,
+                                        scope_filter,
+                                        self.allow_destructive_drops,
+                                    );
+                                    if diff_plan.is_up_to_date() {
+                                        *toast = Some("Database sudah 100% selaras dengan skema kanvas!".into());
+                                    } else {
+                                        let leaked_name: &'static str = Box::leak(
+                                            format!("studio_auto_sync_{}", self.deploy_migration_version)
+                                                .into_boxed_str(),
+                                        );
+                                        let leaked_sql: &'static str =
+                                            Box::leak(diff_plan.migration_sql.clone().into_boxed_str());
+                                        let mut runner = MigrationRunner::new();
+                                        runner.add(Migration {
+                                            version: self.deploy_migration_version,
+                                            name: leaked_name,
+                                            target: self.deploy_target,
+                                            up_sql: leaked_sql,
+                                            down_sql: None,
+                                        });
+                                        match engine.run_migrations(&runner) {
+                                            Ok(reports) => {
+                                                self.deploy_migration_version += 1;
+                                                *toast = Some(format!(
+                                                    "Berhasil! Perubahan skema disimpan ke {} database! (12-Step Rebuild: {})",
+                                                    reports.len(),
+                                                    if diff_plan.requires_rebuild { "Ya" } else { "Tidak" }
+                                                ));
+                                            }
+                                            Err(e) => {
+                                                *toast = Some(format!("Gagal menerapkan ke database: {}", e));
+                                            }
+                                        }
                                     }
                                 }
+                                Err(e) => *toast = Some(format!("Gagal introspeksi database: {}", e)),
                             }
                         }
-                        Err(e) => *toast = Some(format!("Gagal introspeksi database: {}", e)),
                     }
-                }
-            }
 
-            ui.separator();
+                    ui.separator();
 
-            if ui.button("🎯 Reset Posisi Layar").clicked() {
-                self.canvas_pan = Vec2::ZERO;
-            }
-            if ui.button("📝 + Catatan").clicked() {
-                self.blueprint.notes.push(NoteBlueprint {
-                    title: "Catatan Baru".to_string(),
-                    content: "Tuliskan keterangan di sini.".to_string(),
-                    color_hex: "#f59e0b".to_string(),
-                    x: 120.0 - self.canvas_pan.x,
-                    y: 120.0 - self.canvas_pan.y,
+                    if ui
+                        .button(RichText::new("🎯 Pusatkan Semua Item").color(COLOR_SYNCING).strong())
+                        .on_hover_text("Pusatkan seluruh tabel dan domain area di tengah layar agar semuanya langsung terlihat")
+                        .clicked()
+                    {
+                        self.center_all_items(ui.available_size());
+                        *toast = Some("Semua item skema dipusatkan ke tengah layar!".into());
+                    }
+
+                    if ui
+                        .button("↺ Reset Layar (0,0)")
+                        .on_hover_text("Kembalikan posisi geser/pan layar ke titik asal (0,0)")
+                        .clicked()
+                    {
+                        self.canvas_pan = Vec2::ZERO;
+                    }
+
+                    // Tombol pintas scroll/pan
+                    ui.label(RichText::new("Scroll:").color(COLOR_TEXT_MUTED));
+                    if ui.small_button("◀").on_hover_text("Geser/Scroll ke Kiri").clicked() {
+                        self.canvas_pan.x += 160.0;
+                    }
+                    if ui.small_button("▲").on_hover_text("Geser/Scroll ke Atas").clicked() {
+                        self.canvas_pan.y += 160.0;
+                    }
+                    if ui.small_button("▼").on_hover_text("Geser/Scroll ke Bawah").clicked() {
+                        self.canvas_pan.y -= 160.0;
+                    }
+                    if ui.small_button("▶").on_hover_text("Geser/Scroll ke Kanan").clicked() {
+                        self.canvas_pan.x -= 160.0;
+                    }
+
+                    ui.separator();
+
+                    if ui.button("📝 + Catatan").clicked() {
+                        self.blueprint.notes.push(NoteBlueprint {
+                            title: "Catatan Baru".to_string(),
+                            content: "Tuliskan keterangan di sini.".to_string(),
+                            color_hex: "#f59e0b".to_string(),
+                            x: 120.0 - self.canvas_pan.x,
+                            y: 120.0 - self.canvas_pan.y,
+                        });
+                    }
+                    if ui.button("📦 + Area Domain").clicked() {
+                        self.blueprint.subject_areas.push(SubjectAreaBlueprint {
+                            name: "Area Baru".to_string(),
+                            color_hex: "#0284c7".to_string(),
+                            x: 40.0 - self.canvas_pan.x,
+                            y: 40.0 - self.canvas_pan.y,
+                            width: 460.0,
+                            height: 320.0,
+                        });
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let insp_text = if self.show_inspector_panel {
+                            "Tutup Pengaturan ▶"
+                        } else {
+                            "◀ Buka Pengaturan"
+                        };
+                        if ui
+                            .selectable_label(self.show_inspector_panel, insp_text)
+                            .clicked()
+                        {
+                            self.show_inspector_panel = !self.show_inspector_panel;
+                        }
+                    });
                 });
-            }
-            if ui.button("📦 + Area Domain").clicked() {
-                self.blueprint.subject_areas.push(SubjectAreaBlueprint {
-                    name: "Area Baru".to_string(),
-                    color_hex: "#0284c7".to_string(),
-                    x: 40.0 - self.canvas_pan.x,
-                    y: 40.0 - self.canvas_pan.y,
-                    width: 460.0,
-                    height: 320.0,
-                });
-            }
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let insp_text = if self.show_inspector_panel {
-                    "Tutup Pengaturan ▶"
-                } else {
-                    "◀ Buka Pengaturan"
-                };
-                if ui
-                    .selectable_label(self.show_inspector_panel, insp_text)
-                    .clicked()
-                {
-                    self.show_inspector_panel = !self.show_inspector_panel;
-                }
             });
-        });
 
         ui.add_space(4.0);
 
@@ -622,11 +711,22 @@ impl SchemaInspectorView {
                 let (canvas_rect, canvas_response) =
                     ui.allocate_exact_size(Vec2::new(canvas_width, total_height), Sense::click_and_drag());
 
-                if canvas_response.dragged_by(egui::PointerButton::Secondary)
-                    || canvas_response.dragged_by(egui::PointerButton::Middle)
-                {
-                    self.canvas_pan += canvas_response.drag_delta();
+                // 1. Dukungan Scroll Roda Mouse & Trackpad (Vertikal & Horizontal)
+                if canvas_response.hovered() {
+                    let raw_scroll = ui.input(|i| i.raw_scroll_delta);
+                    let smooth_scroll = ui.input(|i| i.smooth_scroll_delta);
+                    let scroll = if raw_scroll != Vec2::ZERO {
+                        raw_scroll
+                    } else {
+                        smooth_scroll
+                    };
+
+                    if scroll != Vec2::ZERO {
+                        self.canvas_pan += scroll;
+                    }
                 }
+
+                let mut any_item_interacted = false;
 
                 let painter = ui.painter_at(canvas_rect);
 
@@ -661,6 +761,7 @@ impl SchemaInspectorView {
                     let id = ui.make_persistent_id(format!("area_card_{}_{}", a_idx, area.name));
                     let resp = ui.interact(area_rect, id, Sense::click_and_drag());
                     if resp.dragged() {
+                        any_item_interacted = true;
                         let delta = resp.drag_delta();
                         let prev_x = area.x;
                         let prev_y = area.y;
@@ -677,6 +778,9 @@ impl SchemaInspectorView {
                                 tbl.y += delta.y;
                             }
                         }
+                    }
+                    if resp.clicked() || resp.hovered() {
+                        any_item_interacted = true;
                     }
 
                     painter.rect_filled(
@@ -707,6 +811,10 @@ impl SchemaInspectorView {
                     if resize_resp.dragged() {
                         area.width = (area.width + resize_resp.drag_delta().x).max(200.0);
                         area.height = (area.height + resize_resp.drag_delta().y).max(140.0);
+                        any_item_interacted = true;
+                    }
+                    if resize_resp.hovered() {
+                        any_item_interacted = true;
                     }
                     painter.text(
                         resize_rect.center(),
@@ -737,10 +845,15 @@ impl SchemaInspectorView {
                         tbl.x += resp.drag_delta().x;
                         tbl.y += resp.drag_delta().y;
                         clicked_table_idx = Some(idx);
+                        any_item_interacted = true;
                     }
                     if resp.clicked() {
                         clicked_table_idx = Some(idx);
                         self.show_inspector_panel = true;
+                        any_item_interacted = true;
+                    }
+                    if resp.hovered() {
+                        any_item_interacted = true;
                     }
 
                     let is_selected = self.selected_bp_table_idx == idx;
@@ -796,6 +909,10 @@ impl SchemaInspectorView {
                     );
                     if wire_resp.drag_started() {
                         self.active_wire_drag = Some(idx);
+                        any_item_interacted = true;
+                    }
+                    if wire_resp.hovered() || wire_resp.dragged() {
+                        any_item_interacted = true;
                     }
 
                     // Daftar Kolom dengan Badge Visual Anti-Slop (PK / FK / AES)
@@ -1041,6 +1158,10 @@ impl SchemaInspectorView {
                     if resp.dragged() {
                         note.x += resp.drag_delta().x;
                         note.y += resp.drag_delta().y;
+                        any_item_interacted = true;
+                    }
+                    if resp.hovered() {
+                        any_item_interacted = true;
                     }
 
                     painter.rect_filled(
@@ -1067,6 +1188,204 @@ impl SchemaInspectorView {
                         FontId::proportional(11.0),
                         COLOR_TEXT_PRIMARY,
                     );
+                }
+
+                if self.active_wire_drag.is_some() {
+                    any_item_interacted = true;
+                }
+
+                // Pan/Scroll Kanvas dengan Mouse Drag pada Latar Belakang Kosong
+                if canvas_response.dragged_by(egui::PointerButton::Primary)
+                    && !any_item_interacted
+                    && self.active_wire_drag.is_none()
+                {
+                    self.canvas_pan += canvas_response.drag_delta();
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                } else if canvas_response.hovered()
+                    && !any_item_interacted
+                    && self.active_wire_drag.is_none()
+                {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                }
+
+                if canvas_response.dragged_by(egui::PointerButton::Secondary)
+                    || canvas_response.dragged_by(egui::PointerButton::Middle)
+                {
+                    self.canvas_pan += canvas_response.drag_delta();
+                }
+
+                // ================================================================
+                // VISUAL INTERACTIVE SCROLLBARS (SCROLL HORIZONTAL & VERTIKAL)
+                // ================================================================
+                let (min_x, max_x, min_y, max_y) = self.compute_schema_bounds();
+
+                // 1. Scrollbar Vertikal di Sisi Kanan Kanvas
+                let v_track_rect = Rect::from_min_max(
+                    Pos2::new(canvas_rect.right() - 14.0, canvas_rect.top() + 6.0),
+                    Pos2::new(canvas_rect.right() - 3.0, canvas_rect.bottom() - 18.0),
+                );
+                painter.rect_filled(
+                    v_track_rect,
+                    Rounding::same(5.0),
+                    Color32::from_rgba_unmultiplied(15, 23, 42, 160),
+                );
+
+                let range_min_y = (min_y - 250.0).min(-self.canvas_pan.y);
+                let range_max_y = (max_y + 350.0).max(-self.canvas_pan.y + canvas_rect.height());
+                let total_span_y = (range_max_y - range_min_y).max(100.0);
+
+                let current_scroll_y = (-self.canvas_pan.y - range_min_y).max(0.0);
+                let scroll_frac_y = (current_scroll_y / (total_span_y - canvas_rect.height()).max(1.0)).clamp(0.0, 1.0);
+
+                let thumb_height = ((canvas_rect.height() / total_span_y) * (v_track_rect.height() - 4.0)).clamp(28.0, v_track_rect.height() - 4.0);
+                let thumb_top = v_track_rect.top() + 2.0 + scroll_frac_y * (v_track_rect.height() - 4.0 - thumb_height);
+                let v_thumb_rect = Rect::from_min_size(
+                    Pos2::new(v_track_rect.left() + 2.0, thumb_top),
+                    Vec2::new(v_track_rect.width() - 4.0, thumb_height),
+                );
+
+                let v_thumb_id = ui.make_persistent_id("canvas_v_thumb");
+                let v_thumb_resp = ui.interact(v_thumb_rect, v_thumb_id, Sense::drag());
+                let v_thumb_hovered = v_thumb_resp.hovered() || v_thumb_resp.dragged();
+                if v_thumb_resp.dragged() {
+                    let delta_frac_y = v_thumb_resp.drag_delta().y / (v_track_rect.height() - 4.0 - thumb_height).max(1.0);
+                    self.canvas_pan.y -= delta_frac_y * (total_span_y - canvas_rect.height());
+                }
+
+                let v_thumb_color = if v_thumb_hovered {
+                    COLOR_SYNCING
+                } else {
+                    Color32::from_rgba_unmultiplied(148, 163, 184, 180)
+                };
+                painter.rect_filled(v_thumb_rect, Rounding::same(4.0), v_thumb_color);
+
+                // 2. Scrollbar Horizontal di Sisi Bawah Kanvas
+                let h_track_rect = Rect::from_min_max(
+                    Pos2::new(canvas_rect.left() + 6.0, canvas_rect.bottom() - 14.0),
+                    Pos2::new(canvas_rect.right() - 18.0, canvas_rect.bottom() - 3.0),
+                );
+                painter.rect_filled(
+                    h_track_rect,
+                    Rounding::same(5.0),
+                    Color32::from_rgba_unmultiplied(15, 23, 42, 160),
+                );
+
+                let range_min_x = (min_x - 250.0).min(-self.canvas_pan.x);
+                let range_max_x = (max_x + 350.0).max(-self.canvas_pan.x + canvas_rect.width());
+                let total_span_x = (range_max_x - range_min_x).max(100.0);
+
+                let current_scroll_x = (-self.canvas_pan.x - range_min_x).max(0.0);
+                let scroll_frac_x = (current_scroll_x / (total_span_x - canvas_rect.width()).max(1.0)).clamp(0.0, 1.0);
+
+                let thumb_width = ((canvas_rect.width() / total_span_x) * (h_track_rect.width() - 4.0)).clamp(28.0, h_track_rect.width() - 4.0);
+                let thumb_left = h_track_rect.left() + 2.0 + scroll_frac_x * (h_track_rect.width() - 4.0 - thumb_width);
+                let h_thumb_rect = Rect::from_min_size(
+                    Pos2::new(thumb_left, h_track_rect.top() + 2.0),
+                    Vec2::new(thumb_width, h_track_rect.height() - 4.0),
+                );
+
+                let h_thumb_id = ui.make_persistent_id("canvas_h_thumb");
+                let h_thumb_resp = ui.interact(h_thumb_rect, h_thumb_id, Sense::drag());
+                let h_thumb_hovered = h_thumb_resp.hovered() || h_thumb_resp.dragged();
+                if h_thumb_resp.dragged() {
+                    let delta_frac_x = h_thumb_resp.drag_delta().x / (h_track_rect.width() - 4.0 - thumb_width).max(1.0);
+                    self.canvas_pan.x -= delta_frac_x * (total_span_x - canvas_rect.width());
+                }
+
+                let h_thumb_color = if h_thumb_hovered {
+                    COLOR_SYNCING
+                } else {
+                    Color32::from_rgba_unmultiplied(148, 163, 184, 180)
+                };
+                painter.rect_filled(h_thumb_rect, Rounding::same(4.0), h_thumb_color);
+
+                // 3. Floating HUD Tombol Cepat Scroll & Navigasi (Pojok Kanan Bawah)
+                let hud_width = 246.0_f32;
+                let hud_height = 36.0_f32;
+                let hud_rect = Rect::from_min_size(
+                    Pos2::new(canvas_rect.right() - hud_width - 24.0, canvas_rect.bottom() - hud_height - 22.0),
+                    Vec2::new(hud_width, hud_height),
+                );
+                painter.rect_filled(
+                    hud_rect,
+                    Rounding::same(6.0),
+                    Color32::from_rgba_unmultiplied(15, 23, 42, 230),
+                );
+                painter.rect_stroke(
+                    hud_rect,
+                    Rounding::same(6.0),
+                    Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(71, 85, 105, 180)),
+                );
+
+                let mut btn_x = hud_rect.left() + 6.0;
+                let btn_y = hud_rect.top() + 6.0;
+                let btn_size = 24.0_f32;
+
+                // Tombol Pan Kiri [◀]
+                let left_btn_rect = Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::new(btn_size, btn_size));
+                let left_id = ui.make_persistent_id("hud_pan_left");
+                let left_resp = ui.interact(left_btn_rect, left_id, Sense::click());
+                painter.rect_filled(left_btn_rect, Rounding::same(3.0), if left_resp.hovered() { Color32::from_rgb(51, 65, 85) } else { Color32::from_rgb(30, 41, 59) });
+                painter.text(left_btn_rect.center(), Align2::CENTER_CENTER, "◀", FontId::monospace(11.0), Color32::WHITE);
+                if left_resp.clicked() {
+                    self.canvas_pan.x += 160.0;
+                }
+                btn_x += btn_size + 4.0;
+
+                // Tombol Pan Atas [▲]
+                let up_btn_rect = Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::new(btn_size, btn_size));
+                let up_id = ui.make_persistent_id("hud_pan_up");
+                let up_resp = ui.interact(up_btn_rect, up_id, Sense::click());
+                painter.rect_filled(up_btn_rect, Rounding::same(3.0), if up_resp.hovered() { Color32::from_rgb(51, 65, 85) } else { Color32::from_rgb(30, 41, 59) });
+                painter.text(up_btn_rect.center(), Align2::CENTER_CENTER, "▲", FontId::monospace(11.0), Color32::WHITE);
+                if up_resp.clicked() {
+                    self.canvas_pan.y += 160.0;
+                }
+                btn_x += btn_size + 4.0;
+
+                // Tombol Pan Bawah [▼]
+                let down_btn_rect = Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::new(btn_size, btn_size));
+                let down_id = ui.make_persistent_id("hud_pan_down");
+                let down_resp = ui.interact(down_btn_rect, down_id, Sense::click());
+                painter.rect_filled(down_btn_rect, Rounding::same(3.0), if down_resp.hovered() { Color32::from_rgb(51, 65, 85) } else { Color32::from_rgb(30, 41, 59) });
+                painter.text(down_btn_rect.center(), Align2::CENTER_CENTER, "▼", FontId::monospace(11.0), Color32::WHITE);
+                if down_resp.clicked() {
+                    self.canvas_pan.y -= 160.0;
+                }
+                btn_x += btn_size + 4.0;
+
+                // Tombol Pan Kanan [▶]
+                let right_btn_rect = Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::new(btn_size, btn_size));
+                let right_id = ui.make_persistent_id("hud_pan_right");
+                let right_resp = ui.interact(right_btn_rect, right_id, Sense::click());
+                painter.rect_filled(right_btn_rect, Rounding::same(3.0), if right_resp.hovered() { Color32::from_rgb(51, 65, 85) } else { Color32::from_rgb(30, 41, 59) });
+                painter.text(right_btn_rect.center(), Align2::CENTER_CENTER, "▶", FontId::monospace(11.0), Color32::WHITE);
+                if right_resp.clicked() {
+                    self.canvas_pan.x -= 160.0;
+                }
+                btn_x += btn_size + 8.0;
+
+                // Tombol [🎯 Pusatkan]
+                let center_btn_rect = Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::new(76.0, btn_size));
+                let center_id = ui.make_persistent_id("hud_center_all");
+                let center_resp = ui.interact(center_btn_rect, center_id, Sense::click());
+                painter.rect_filled(center_btn_rect, Rounding::same(3.0), if center_resp.hovered() { COLOR_SYNCING } else { Color32::from_rgb(30, 41, 59) });
+                painter.text(center_btn_rect.center(), Align2::CENTER_CENTER, "🎯 Pusatkan", FontId::proportional(11.0), Color32::WHITE);
+                if center_resp.clicked() {
+                    self.center_all_items(Vec2::new(canvas_width, total_height));
+                    *toast = Some("Semua item skema dipusatkan ke tengah layar!".into());
+                }
+                btn_x += 78.0 + 4.0;
+
+                // Tombol [↺ (0,0)]
+                let reset_btn_rect = Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::new(32.0, btn_size));
+                let reset_id = ui.make_persistent_id("hud_reset_origin");
+                let reset_resp = ui.interact(reset_btn_rect, reset_id, Sense::click());
+                painter.rect_filled(reset_btn_rect, Rounding::same(3.0), if reset_resp.hovered() { COLOR_WARNING } else { Color32::from_rgb(30, 41, 59) });
+                painter.text(reset_btn_rect.center(), Align2::CENTER_CENTER, "↺", FontId::proportional(12.0), Color32::WHITE);
+                if reset_resp.clicked() {
+                    self.canvas_pan = Vec2::ZERO;
+                    *toast = Some("Posisi kanvas di-reset ke titik asal (0,0)!".into());
                 }
             });
 
@@ -1302,55 +1621,59 @@ impl SchemaInspectorView {
     // MODE 2: VISUAL TABLE, COLUMN & FOREIGN KEY DESIGNER
     // ========================================================================
     fn render_table_and_fk_designer(&mut self, ui: &mut Ui, toast: &mut Option<String>) {
-        // Bar Pilih & Buat Tabel
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Daftar Tabel Blueprint:").strong());
-            for (idx, tbl) in self.blueprint.tables.iter().enumerate() {
-                let is_sel = self.selected_bp_table_idx == idx;
-                let label = format!("📋 {} [{}]", tbl.name, tbl.scope);
-                if ui
-                    .selectable_label(
-                        is_sel,
-                        RichText::new(label).color(if is_sel {
-                            COLOR_SYNCING
-                        } else {
-                            COLOR_TEXT_SECONDARY
-                        }),
-                    )
-                    .clicked()
-                {
-                    self.selected_bp_table_idx = idx;
-                }
-            }
+        // Bar Pilih & Buat Tabel (Bisa discroll mendatar jika banyak tabel)
+        ScrollArea::horizontal()
+            .id_salt("table_and_fk_tabs_scroll")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Daftar Tabel Blueprint:").strong());
+                    for (idx, tbl) in self.blueprint.tables.iter().enumerate() {
+                        let is_sel = self.selected_bp_table_idx == idx;
+                        let label = format!("{} [{}]", tbl.name, tbl.scope);
+                        if ui
+                            .selectable_label(
+                                is_sel,
+                                RichText::new(label).color(if is_sel {
+                                    COLOR_SYNCING
+                                } else {
+                                    COLOR_TEXT_SECONDARY
+                                }),
+                            )
+                            .clicked()
+                        {
+                            self.selected_bp_table_idx = idx;
+                        }
+                    }
 
-            ui.separator();
-            ui.add(egui::TextEdit::singleline(&mut self.new_table_name).desired_width(110.0));
-            ComboBox::from_id_salt("new_tbl_scope_cb")
-                .selected_text(format!("{}", self.new_table_scope))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.new_table_scope, TableScope::Global, "Global");
-                    ui.selectable_value(&mut self.new_table_scope, TableScope::Shard, "Shard");
-                    ui.selectable_value(&mut self.new_table_scope, TableScope::Both, "Both");
+                    ui.separator();
+                    ui.add(egui::TextEdit::singleline(&mut self.new_table_name).desired_width(110.0));
+                    ComboBox::from_id_salt("new_tbl_scope_cb")
+                        .selected_text(format!("{}", self.new_table_scope))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.new_table_scope, TableScope::Global, "Global");
+                            ui.selectable_value(&mut self.new_table_scope, TableScope::Shard, "Shard");
+                            ui.selectable_value(&mut self.new_table_scope, TableScope::Both, "Both");
+                        });
+
+                    if ui
+                        .button(RichText::new("➕ Buat Tabel").color(COLOR_HEALTHY).strong())
+                        .clicked()
+                    {
+                        let clean = self.new_table_name.trim().to_string();
+                        if !clean.is_empty() {
+                            let count = self.blueprint.tables.len();
+                            self.blueprint.tables.push(TableBlueprint::new(
+                                &clean,
+                                self.new_table_scope,
+                                60.0 + (count as f32 * 40.0),
+                                80.0 + (count as f32 * 30.0),
+                            ));
+                            self.selected_bp_table_idx = self.blueprint.tables.len() - 1;
+                            *toast = Some(format!("Tabel '{}' berhasil dibuat!", clean));
+                        }
+                    }
                 });
-
-            if ui
-                .button(RichText::new("➕ Buat Tabel").color(COLOR_HEALTHY).strong())
-                .clicked()
-            {
-                let clean = self.new_table_name.trim().to_string();
-                if !clean.is_empty() {
-                    let count = self.blueprint.tables.len();
-                    self.blueprint.tables.push(TableBlueprint::new(
-                        &clean,
-                        self.new_table_scope,
-                        60.0 + (count as f32 * 40.0),
-                        80.0 + (count as f32 * 30.0),
-                    ));
-                    self.selected_bp_table_idx = self.blueprint.tables.len() - 1;
-                    *toast = Some(format!("Tabel '{}' berhasil dibuat!", clean));
-                }
-            }
-        });
+            });
 
         ui.add_space(6.0);
 

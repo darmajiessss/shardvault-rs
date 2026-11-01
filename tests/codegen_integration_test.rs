@@ -274,3 +274,35 @@ fn test_friendly_field_types_and_modular_presets_and_wiring() {
     assert_eq!(merged_tbl.x, 100.0);
     assert_eq!(merged_tbl.y, 100.0);
 }
+
+#[test]
+fn test_schema_canvas_scrolling_and_auto_centering() {
+    use shardvault_rs::studio::SchemaInspectorView;
+
+    let mut view = SchemaInspectorView::default();
+    assert_eq!(view.blueprint.tables.len(), 4);
+    assert_eq!(view.blueprint.subject_areas.len(), 2);
+
+    // 1. Uji kalkulasi batas luar (bounding box) seluruh item skema
+    let (min_x, max_x, min_y, max_y) = view.compute_schema_bounds();
+    assert!(min_x < max_x, "min_x harus lebih kecil dari max_x: {} vs {}", min_x, max_x);
+    assert!(min_y < max_y, "min_y harus lebih kecil dari max_y: {} vs {}", min_y, max_y);
+    assert!(max_y >= 595.0, "max_y harus mencakup area domain bawah (>595px), aktual: {}", max_y);
+
+    // 2. Uji fitur Pusatkan Semua Item (Auto-Centering & Fit View)
+    let canvas_size = eframe::egui::Vec2::new(1200.0, 800.0);
+    view.center_all_items(canvas_size);
+
+    let center_x = (min_x + max_x) * 0.5;
+    let center_y = (min_y + max_y) * 0.5;
+    assert_eq!(view.canvas_pan.x + center_x, 600.0, "Titik tengah skema harus tepat di tengah kanvas X");
+    assert_eq!(view.canvas_pan.y + center_y, 400.0, "Titik tengah skema harus tepat di tengah kanvas Y");
+
+    // 3. Uji geser / scroll kanvas vertikal dan horizontal
+    let pan_before = view.canvas_pan;
+    view.canvas_pan.y -= 160.0; // scroll ke bawah
+    assert_eq!(view.canvas_pan.y, pan_before.y - 160.0);
+
+    view.canvas_pan.x += 160.0; // scroll ke kanan
+    assert_eq!(view.canvas_pan.x, pan_before.x + 160.0);
+}

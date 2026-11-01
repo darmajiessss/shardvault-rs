@@ -14,3 +14,4 @@ pub mod theme;
 pub mod transfer_view;
 
 pub use app::StudioApp;
+pub use schema_view::SchemaInspectorView;
