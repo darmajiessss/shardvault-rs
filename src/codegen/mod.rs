@@ -8,9 +8,9 @@ pub mod rust_gen;
 pub mod ts_gen;
 
 pub use ast::{
-    Cardinality, ColumnBlueprint, ForeignKeyAction, ForeignKeyBlueprint, IndexBlueprint,
-    IssueSeverity, NoteBlueprint, SchemaBlueprint, SchemaIssue, SqliteAffinity,
-    SubjectAreaBlueprint, TableBlueprint, TableScope,
+    Cardinality, ColumnBlueprint, ForeignKeyAction, ForeignKeyBlueprint, FriendlyFieldType,
+    IndexBlueprint, IssueSeverity, ModularTablePreset, NoteBlueprint, SchemaBlueprint, SchemaIssue,
+    SqliteAffinity, SubjectAreaBlueprint, TableBlueprint, TableScope,
 };
 pub use ddl_gen::{compile_blueprint_ddl, compile_table_ddl, quote_ident, SqlDialect};
 pub use diff_gen::{diff_blueprint_against_manifest, DiffActionItem, DiffActionKind, SchemaDiffPlan};

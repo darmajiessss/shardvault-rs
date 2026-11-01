@@ -22,8 +22,9 @@ pub mod prelude {
         compile_blueprint_ddl, compile_table_ddl, diff_blueprint_against_manifest,
         export_blueprint_json, generate_rust_code, generate_typescript_code, Cardinality,
         ColumnBlueprint, DiffActionItem, DiffActionKind, ForeignKeyAction, ForeignKeyBlueprint,
-        IndexBlueprint, IssueSeverity, NoteBlueprint, SchemaBlueprint, SchemaDiffPlan, SchemaIssue,
-        SqlDialect, SqliteAffinity, SubjectAreaBlueprint, TableBlueprint, TableScope,
+        FriendlyFieldType, IndexBlueprint, IssueSeverity, ModularTablePreset, NoteBlueprint,
+        SchemaBlueprint, SchemaDiffPlan, SchemaIssue, SqlDialect, SqliteAffinity,
+        SubjectAreaBlueprint, TableBlueprint, TableScope,
     };
     pub use crate::config::{EngineBuilder, EngineConfig};
     pub use crate::crypto::{

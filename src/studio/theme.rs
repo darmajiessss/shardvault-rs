@@ -49,4 +49,44 @@ pub fn apply_studio_theme(ctx: &eframe::egui::Context) {
     style.spacing.item_spacing = eframe::egui::vec2(8.0, 6.0);
     style.spacing.button_padding = eframe::egui::vec2(10.0, 5.0);
     ctx.set_style(style);
+
+    // Konfigurasi fallback font sistem Windows (Segoe UI + Segoe UI Emoji)
+    // agar semua karakter Unicode, simbol, dan emoji terbaca dengan jernih tanpa tanda tanya/kotak rusak
+    let mut fonts = eframe::egui::FontDefinitions::default();
+    let mut modified = false;
+
+    if let Ok(font_bytes) = std::fs::read("C:\\Windows\\Fonts\\segoeui.ttf") {
+        fonts.font_data.insert(
+            "segoeui".to_owned(),
+            eframe::egui::FontData::from_owned(font_bytes),
+        );
+        fonts
+            .families
+            .entry(eframe::egui::FontFamily::Proportional)
+            .or_default()
+            .insert(0, "segoeui".to_owned());
+        modified = true;
+    }
+
+    if let Ok(emoji_bytes) = std::fs::read("C:\\Windows\\Fonts\\seguiemj.ttf") {
+        fonts.font_data.insert(
+            "seguiemj".to_owned(),
+            eframe::egui::FontData::from_owned(emoji_bytes),
+        );
+        fonts
+            .families
+            .entry(eframe::egui::FontFamily::Proportional)
+            .or_default()
+            .push("seguiemj".to_owned());
+        fonts
+            .families
+            .entry(eframe::egui::FontFamily::Monospace)
+            .or_default()
+            .push("seguiemj".to_owned());
+        modified = true;
+    }
+
+    if modified {
+        ctx.set_fonts(fonts);
+    }
 }

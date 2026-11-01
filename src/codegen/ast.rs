@@ -831,7 +831,7 @@ impl SchemaBlueprint {
             tables: vec![categories, products, orders, order_items],
             subject_areas: vec![
                 SubjectAreaBlueprint {
-                    name: "📦 Global Master Catalog".to_string(),
+                    name: "Global Master Catalog".to_string(),
                     color_hex: "#0284c7".to_string(),
                     x: 30.0,
                     y: 35.0,
@@ -839,7 +839,7 @@ impl SchemaBlueprint {
                     height: 270.0,
                 },
                 SubjectAreaBlueprint {
-                    name: "⚡ Sharded Branch Transactions (Auto-CDC)".to_string(),
+                    name: "Sharded Branch Transactions (Auto-CDC)".to_string(),
                     color_hex: "#7e22ce".to_string(),
                     x: 30.0,
                     y: 325.0,
@@ -915,7 +915,7 @@ impl SchemaBlueprint {
             tables: vec![tenants, users, documents, doc_versions],
             subject_areas: vec![
                 SubjectAreaBlueprint {
-                    name: "📦 Global Control Plane".to_string(),
+                    name: "Global Control Plane".to_string(),
                     color_hex: "#0284c7".to_string(),
                     x: 30.0,
                     y: 35.0,
@@ -923,7 +923,7 @@ impl SchemaBlueprint {
                     height: 260.0,
                 },
                 SubjectAreaBlueprint {
-                    name: "🔒 Tenant Isolated Vault Shard".to_string(),
+                    name: "Tenant Isolated Vault Shard".to_string(),
                     color_hex: "#7e22ce".to_string(),
                     x: 30.0,
                     y: 315.0,
@@ -938,6 +938,349 @@ impl SchemaBlueprint {
                 x: 755.0,
                 y: 70.0,
             }],
+        }
+    }
+
+    /// Otomatis menghubungkan dua tabel saat ditarik garis dari tabel induk ke tabel anak.
+    /// Jika kolom penghubung belum ada di tabel anak, kolom akan otomatis dibuat dengan tipe yang sesuai!
+    pub fn connect_tables_automatically(
+        &mut self,
+        parent_idx: usize,
+        child_idx: usize,
+    ) -> Result<String, ShardVaultError> {
+        if parent_idx >= self.tables.len() || child_idx >= self.tables.len() {
+            return Err(ShardVaultError::Migration("Indeks tabel tidak valid".into()));
+        }
+        if parent_idx == child_idx {
+            return Err(ShardVaultError::Migration(
+                "Tidak dapat menghubungkan tabel ke dirinya sendiri".into(),
+            ));
+        }
+
+        let parent_name = self.tables[parent_idx].name.clone();
+        let (parent_pk_name, parent_pk_type) = {
+            let parent_tbl = &self.tables[parent_idx];
+            let pk_col = parent_tbl
+                .pk_column()
+                .cloned()
+                .unwrap_or_else(|| ColumnBlueprint::primary_key_int("id"));
+            (pk_col.name, pk_col.col_type)
+        };
+
+        let child_tbl = &mut self.tables[child_idx];
+        let child_name = child_tbl.name.clone();
+
+        // Tentukan nama kolom FK yang ramah pemula, e.g. "kategori_id" jika parent_name = "kategori"
+        let singular_parent = if parent_name.ends_with('s') && parent_name.len() > 1 {
+            &parent_name[..parent_name.len() - 1]
+        } else {
+            &parent_name
+        };
+        let suggested_fk_col = format!("{}_{}", singular_parent, parent_pk_name);
+
+        // Cari apakah child sudah punya kolom yang cocok (bukan primary key milik child sendiri)
+        let fk_col_name = if let Some(existing_col) = child_tbl.columns.iter().find(|c| {
+            !c.is_primary_key
+                && (c.name.eq_ignore_ascii_case(&suggested_fk_col)
+                    || c.name.eq_ignore_ascii_case(&format!("{}_id", parent_name)))
+        }) {
+            existing_col.name.clone()
+        } else {
+            // Buat kolom baru otomatis di child
+            let new_col = ColumnBlueprint {
+                name: suggested_fk_col.clone(),
+                col_type: parent_pk_type,
+                is_primary_key: false,
+                auto_increment: false,
+                not_null: true,
+                unique: false,
+                default_expr: None,
+                check_expr: None,
+                comment: format!("Relasi ke {}.{}", parent_name, parent_pk_name),
+                encrypted_aes: false,
+                include_in_hmac: true,
+            };
+            child_tbl.columns.push(new_col);
+            suggested_fk_col
+        };
+
+        // Cek apakah relasi FK ini sudah terdaftar
+        let exists = child_tbl.foreign_keys.iter().any(|f| {
+            f.from_column.eq_ignore_ascii_case(&fk_col_name)
+                && f.ref_table.eq_ignore_ascii_case(&parent_name)
+        });
+
+        if !exists {
+            let on_del = if child_name.contains("rincian")
+                || child_name.contains("detail")
+                || child_name.contains("item")
+            {
+                ForeignKeyAction::Cascade
+            } else {
+                ForeignKeyAction::Restrict
+            };
+            let mut fk = ForeignKeyBlueprint::new(
+                &child_name,
+                &fk_col_name,
+                &parent_name,
+                &parent_pk_name,
+                on_del,
+            );
+            fk.auto_index_fk = true;
+            child_tbl.foreign_keys.push(fk);
+        }
+
+        Ok(format!(
+            "Tabel '{}' berhasil dihubungkan ke '{}' via kolom '{}'!",
+            child_name, parent_name, fk_col_name
+        ))
+    }
+
+    /// Gabungkan blueprint lain (misal dari drop file .ddb.json atau template) ke kanvas saat ini tanpa menimpa yang lama
+    pub fn merge_blueprint(&mut self, other: SchemaBlueprint, offset_x: f32, offset_y: f32) {
+        for mut tbl in other.tables {
+            let orig_name = tbl.name.clone();
+            let mut candidate_name = orig_name.clone();
+            let mut counter = 2;
+            while self
+                .tables
+                .iter()
+                .any(|t| t.name.eq_ignore_ascii_case(&candidate_name))
+            {
+                candidate_name = format!("{}_{}", orig_name, counter);
+                counter += 1;
+            }
+            tbl.name = candidate_name;
+            tbl.x += offset_x;
+            tbl.y += offset_y;
+            self.tables.push(tbl);
+        }
+        for mut area in other.subject_areas {
+            area.x += offset_x;
+            area.y += offset_y;
+            self.subject_areas.push(area);
+        }
+        for mut note in other.notes {
+            note.x += offset_x;
+            note.y += offset_y;
+            self.notes.push(note);
+        }
+    }
+}
+
+/// Tipe data ramah orang awam (seperti di Airtable / Notion)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FriendlyFieldType {
+    /// Teks umum / Nama
+    Text,
+    /// Uang / Harga / Jumlah (Integer, default 0)
+    Currency,
+    /// Angka Desimal / Persen (Real, default 0.0)
+    Decimal,
+    /// Tanggal & Jam Otomatis (Text, default CURRENT_TIMESTAMP)
+    Timestamp,
+    /// Status Ya / Tidak (Integer, default 1)
+    Boolean,
+    /// Teks Rahasia (AES-256-GCM + HMAC)
+    SecretText,
+}
+
+impl FriendlyFieldType {
+    pub fn all() -> &'static [FriendlyFieldType] {
+        &[
+            FriendlyFieldType::Text,
+            FriendlyFieldType::Currency,
+            FriendlyFieldType::Decimal,
+            FriendlyFieldType::Timestamp,
+            FriendlyFieldType::Boolean,
+            FriendlyFieldType::SecretText,
+        ]
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            FriendlyFieldType::Text => "📝 Teks / Nama",
+            FriendlyFieldType::Currency => "💰 Uang / Harga",
+            FriendlyFieldType::Decimal => "📊 Angka Desimal",
+            FriendlyFieldType::Timestamp => "📅 Tanggal Otomatis",
+            FriendlyFieldType::Boolean => "✅ Status Ya/Tidak",
+            FriendlyFieldType::SecretText => "🔒 Teks Rahasia (AES)",
+        }
+    }
+
+    pub fn to_column_blueprint(self, name: &str) -> ColumnBlueprint {
+        match self {
+            FriendlyFieldType::Text => {
+                let mut col = ColumnBlueprint::new(name, SqliteAffinity::Text);
+                col.comment = "Teks / String".to_string();
+                col
+            }
+            FriendlyFieldType::Currency => {
+                let mut col = ColumnBlueprint::new(name, SqliteAffinity::Integer);
+                col.default_expr = Some("0".to_string());
+                col.comment = "Nominal Uang / Rupiah".to_string();
+                col
+            }
+            FriendlyFieldType::Decimal => {
+                let mut col = ColumnBlueprint::new(name, SqliteAffinity::Real);
+                col.default_expr = Some("0.0".to_string());
+                col.comment = "Angka Desimal / Persen".to_string();
+                col
+            }
+            FriendlyFieldType::Timestamp => {
+                let mut col = ColumnBlueprint::new(name, SqliteAffinity::Text);
+                col.default_expr = Some("CURRENT_TIMESTAMP".to_string());
+                col.comment = "Waktu Pencatatan".to_string();
+                col
+            }
+            FriendlyFieldType::Boolean => {
+                let mut col = ColumnBlueprint::new(name, SqliteAffinity::Integer);
+                col.default_expr = Some("1".to_string());
+                col.comment = "Status Ya (1) / Tidak (0)".to_string();
+                col
+            }
+            FriendlyFieldType::SecretText => {
+                let mut col = ColumnBlueprint::new(name, SqliteAffinity::Text);
+                col.encrypted_aes = true;
+                col.include_in_hmac = true;
+                col.comment = "Teks Rahasia Terenkripsi AES-256-GCM".to_string();
+                col
+            }
+        }
+    }
+
+    pub fn from_column_blueprint(col: &ColumnBlueprint) -> Self {
+        if col.encrypted_aes {
+            FriendlyFieldType::SecretText
+        } else if col.col_type == SqliteAffinity::Real {
+            FriendlyFieldType::Decimal
+        } else if col.default_expr.as_deref() == Some("CURRENT_TIMESTAMP")
+            || col.comment.to_lowercase().contains("waktu")
+            || col.name.ends_with("_at")
+        {
+            FriendlyFieldType::Timestamp
+        } else if col.col_type == SqliteAffinity::Integer {
+            if col.comment.to_lowercase().contains("ya")
+                || col.name.starts_with("is_")
+                || col.name.starts_with("has_")
+                || col.default_expr.as_deref() == Some("1")
+            {
+                FriendlyFieldType::Boolean
+            } else {
+                FriendlyFieldType::Currency
+            }
+        } else {
+            FriendlyFieldType::Text
+        }
+    }
+}
+
+/// Paket modul tabel siap pakai untuk pemula
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModularTablePreset {
+    BlankTable,
+    CatalogModule,
+    InvoiceModule,
+    CustomerModule,
+}
+
+impl ModularTablePreset {
+    pub fn all() -> &'static [ModularTablePreset] {
+        &[
+            ModularTablePreset::BlankTable,
+            ModularTablePreset::CatalogModule,
+            ModularTablePreset::InvoiceModule,
+            ModularTablePreset::CustomerModule,
+        ]
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            ModularTablePreset::BlankTable => "➕ Tabel Kosong Baru",
+            ModularTablePreset::CatalogModule => "📦 Paket Produk & Kategori",
+            ModularTablePreset::InvoiceModule => "🧾 Paket Nota & Rincian",
+            ModularTablePreset::CustomerModule => "👥 Paket Pelanggan",
+        }
+    }
+
+    pub fn instantiate(self, base_x: f32, base_y: f32) -> Vec<TableBlueprint> {
+        match self {
+            ModularTablePreset::BlankTable => {
+                vec![TableBlueprint::new("tabel_baru", TableScope::Shard, base_x, base_y)]
+            }
+            ModularTablePreset::CatalogModule => {
+                let mut categories = TableBlueprint::new("kategori", TableScope::Global, base_x, base_y);
+                categories.comment = "Kategori Produk".to_string();
+                categories.columns.push(ColumnBlueprint::new("nama_kategori", SqliteAffinity::Text));
+
+                let mut products = TableBlueprint::new("produk", TableScope::Global, base_x + 400.0, base_y);
+                products.comment = "Daftar Produk & Harga".to_string();
+                products.columns.push(ColumnBlueprint::new("kategori_id", SqliteAffinity::Integer));
+                products.columns.push(ColumnBlueprint::new("nama_produk", SqliteAffinity::Text));
+                let mut price = ColumnBlueprint::new("harga_jual", SqliteAffinity::Integer);
+                price.default_expr = Some("0".to_string());
+                products.columns.push(price);
+                products.foreign_keys.push(ForeignKeyBlueprint::new(
+                    "produk",
+                    "kategori_id",
+                    "kategori",
+                    "id",
+                    ForeignKeyAction::Restrict,
+                ));
+                vec![categories, products]
+            }
+            ModularTablePreset::InvoiceModule => {
+                let mut invoices = TableBlueprint::new("nota_pesanan", TableScope::Shard, base_x, base_y);
+                invoices.comment = "Nota Transaksi Penjualan".to_string();
+                invoices.columns = vec![
+                    ColumnBlueprint::primary_key_text("nomor_nota"),
+                    ColumnBlueprint::new("nama_kasir", SqliteAffinity::Text),
+                    ColumnBlueprint {
+                        name: "total_bayar".to_string(),
+                        col_type: SqliteAffinity::Integer,
+                        is_primary_key: false,
+                        auto_increment: false,
+                        not_null: true,
+                        unique: false,
+                        default_expr: Some("0".to_string()),
+                        check_expr: None,
+                        comment: "Total Pembayaran".to_string(),
+                        encrypted_aes: false,
+                        include_in_hmac: true,
+                    },
+                    ColumnBlueprint::new("signature", SqliteAffinity::Text),
+                ];
+
+                let mut items = TableBlueprint::new("rincian_nota", TableScope::Shard, base_x + 400.0, base_y);
+                items.comment = "Item Barang dalam Nota".to_string();
+                items.columns = vec![
+                    ColumnBlueprint::primary_key_int("id"),
+                    ColumnBlueprint::new("nomor_nota", SqliteAffinity::Text),
+                    ColumnBlueprint::new("nama_barang", SqliteAffinity::Text),
+                    ColumnBlueprint::new("jumlah", SqliteAffinity::Integer),
+                    ColumnBlueprint::new("subtotal", SqliteAffinity::Integer),
+                ];
+                items.foreign_keys.push(ForeignKeyBlueprint::new(
+                    "rincian_nota",
+                    "nomor_nota",
+                    "nota_pesanan",
+                    "nomor_nota",
+                    ForeignKeyAction::Cascade,
+                ));
+                vec![invoices, items]
+            }
+            ModularTablePreset::CustomerModule => {
+                let mut customers = TableBlueprint::new("pelanggan", TableScope::Global, base_x, base_y);
+                customers.comment = "Data Pelanggan & Member".to_string();
+                customers.columns.push(ColumnBlueprint::new("nama_lengkap", SqliteAffinity::Text));
+                customers.columns.push(ColumnBlueprint::new("no_telepon", SqliteAffinity::Text));
+                let mut secret_pin = ColumnBlueprint::new("pin_rahasia_enc", SqliteAffinity::Text);
+                secret_pin.encrypted_aes = true;
+                secret_pin.include_in_hmac = true;
+                secret_pin.comment = "PIN Terenkripsi AES-256".to_string();
+                customers.columns.push(secret_pin);
+                vec![customers]
+            }
         }
     }
 }

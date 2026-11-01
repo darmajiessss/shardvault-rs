@@ -216,3 +216,61 @@ fn test_multi_target_code_and_dialect_generators() {
     assert_eq!(imp_prod.foreign_keys.len(), 1);
     assert_eq!(imp_prod.foreign_keys[0].ref_table, "categories");
 }
+
+#[test]
+fn test_friendly_field_types_and_modular_presets_and_wiring() {
+    // 1. Uji FriendlyFieldType (tipe data ramah orang awam)
+    let cur_col = FriendlyFieldType::Currency.to_column_blueprint("harga_jual");
+    assert_eq!(cur_col.name, "harga_jual");
+    assert_eq!(cur_col.col_type, SqliteAffinity::Integer);
+    assert_eq!(cur_col.default_expr, Some("0".to_string()));
+    assert_eq!(FriendlyFieldType::from_column_blueprint(&cur_col), FriendlyFieldType::Currency);
+
+    let sec_col = FriendlyFieldType::SecretText.to_column_blueprint("pin_rahasia");
+    assert!(sec_col.encrypted_aes);
+    assert_eq!(FriendlyFieldType::from_column_blueprint(&sec_col), FriendlyFieldType::SecretText);
+
+    // 2. Uji ModularTablePreset (Template blok tabel siap pakai)
+    let catalog_tables = ModularTablePreset::CatalogModule.instantiate(50.0, 50.0);
+    assert_eq!(catalog_tables.len(), 2);
+    assert!(catalog_tables.iter().any(|t| t.name == "kategori"));
+    assert!(catalog_tables.iter().any(|t| t.name == "produk"));
+
+    let produk_tbl = catalog_tables.iter().find(|t| t.name == "produk").unwrap();
+    assert_eq!(produk_tbl.foreign_keys.len(), 1);
+    assert_eq!(produk_tbl.foreign_keys[0].ref_table, "kategori");
+    assert_eq!(produk_tbl.foreign_keys[0].from_column, "kategori_id");
+
+    // 3. Uji Port-to-Card Automatic Wiring (connect_tables_automatically)
+    let mut bp = SchemaBlueprint::new_empty("ModularWiringTest");
+    let mut parent = TableBlueprint::new("suppliers", TableScope::Global, 10.0, 10.0);
+    parent.columns.push(ColumnBlueprint::primary_key_int("id"));
+    parent.columns.push(ColumnBlueprint::new("supplier_name", SqliteAffinity::Text));
+    bp.tables.push(parent);
+
+    let mut child = TableBlueprint::new("purchase_orders", TableScope::Shard, 300.0, 10.0);
+    child.columns.push(ColumnBlueprint::primary_key_int("id"));
+    bp.tables.push(child);
+
+    // Hubungkan suppliers (idx 0) ke purchase_orders (idx 1)
+    let wired = bp.connect_tables_automatically(0, 1);
+    assert!(wired.is_ok(), "Wajib berhasil menghubungkan parent ke child secara otomatis: {:?}", wired);
+    let child_after = &bp.tables[1];
+    assert!(child_after.columns.iter().any(|c| c.name == "supplier_id"));
+    assert_eq!(child_after.foreign_keys.len(), 1);
+    assert_eq!(child_after.foreign_keys[0].from_column, "supplier_id");
+    assert_eq!(child_after.foreign_keys[0].ref_table, "suppliers");
+    assert_eq!(child_after.foreign_keys[0].ref_column, "id");
+    assert!(child_after.foreign_keys[0].auto_index_fk);
+
+    // 4. Uji Merge Blueprint (Drag & Drop modular schema files / templates)
+    let mut other_bp = SchemaBlueprint::new_empty("OtherSubsystem");
+    let other_tbl = TableBlueprint::new("warehouses", TableScope::Global, 0.0, 0.0);
+    other_bp.tables.push(other_tbl);
+    bp.merge_blueprint(other_bp, 100.0, 100.0);
+
+    assert_eq!(bp.tables.len(), 3);
+    let merged_tbl = bp.tables.iter().find(|t| t.name == "warehouses").unwrap();
+    assert_eq!(merged_tbl.x, 100.0);
+    assert_eq!(merged_tbl.y, 100.0);
+}
